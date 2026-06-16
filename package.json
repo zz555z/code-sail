@@ -8,6 +8,7 @@
     "generate:types": "node scripts/generate-types.mjs",
     "build": "tsc && vite build",
     "check": "npm run generate:types && npm run build && cd src-tauri && cargo test",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
