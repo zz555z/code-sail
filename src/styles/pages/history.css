@@ -1,0 +1,307 @@
+.history-layout {
+  display: grid;
+  grid-row: 3;
+  grid-template-columns: minmax(270px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 2px;
+}
+
+.history-provider-list,
+.history-detail-panel,
+.conversation-list {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.history-provider-list::-webkit-scrollbar,
+.history-detail-panel::-webkit-scrollbar,
+.conversation-list::-webkit-scrollbar {
+  display: none;
+}
+
+.history-provider-list {
+  display: grid;
+  align-content: start;
+  gap: 11px;
+  min-width: 0;
+  padding: 8px 12px 10px 0;
+  border-right: 1px solid rgba(232, 240, 236, 0.9);
+}
+
+.history-provider-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.history-provider-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.history-provider-toggle {
+  display: grid;
+  position: relative;
+  grid-template-columns: 16px 16px minmax(0, 1fr) auto;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid rgba(166, 213, 194, 0.42);
+  border-radius: 16px;
+  color: var(--leaf);
+  background: rgba(242, 251, 247, 0.58);
+  font-size: 13px;
+  font-weight: 740;
+  text-align: left;
+  transform: translate3d(0, 0, 0);
+  transition:
+    border-color 220ms var(--ease-ui),
+    background 220ms var(--ease-ui),
+    box-shadow 240ms var(--ease-ui),
+    transform 240ms var(--ease-snap);
+}
+
+.history-provider-toggle:hover {
+  border-color: rgba(145, 191, 173, 0.68);
+  background: #f6fcf9;
+  box-shadow: 0 10px 22px rgba(103, 137, 125, 0.08);
+  transform: translate3d(0, -1px, 0);
+}
+
+.history-provider-toggle svg,
+.history-provider-toggle span,
+.history-provider-toggle em {
+  min-width: 0;
+}
+
+.history-provider-toggle span {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-provider-toggle em {
+  min-width: 28px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--leaf);
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  font-style: normal;
+  text-align: center;
+}
+
+.history-session-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 18px;
+}
+
+.history-session-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 8px 10px;
+  border: 1px solid rgba(228, 238, 233, 0.86);
+  border-radius: 18px;
+  color: var(--soft-ink);
+  background: rgba(255, 255, 255, 0.66);
+  text-align: left;
+  transform: translate3d(0, 0, 0);
+  transition:
+    border-color 220ms var(--ease-ui),
+    background 220ms var(--ease-ui),
+    box-shadow 240ms var(--ease-ui),
+    color 180ms ease,
+    transform 240ms var(--ease-snap);
+}
+
+.history-session-item:hover:not(:disabled),
+.history-session-item.selected {
+  border-color: rgba(166, 213, 194, 0.66);
+  color: var(--leaf);
+  background: #ffffff;
+  box-shadow: 0 12px 24px rgba(103, 137, 125, 0.1);
+  transform: translate3d(0, -1px, 0);
+}
+
+.history-session-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.history-session-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 12px;
+  color: var(--leaf);
+  background: var(--mint);
+}
+
+.history-session-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.history-session-copy strong,
+.history-session-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-session-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 730;
+}
+
+.history-session-copy span {
+  color: var(--soft-ink);
+  font-size: 11px;
+}
+
+.history-detail-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 6px 0 10px 2px;
+}
+
+.history-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 2px 0 12px;
+  border-bottom: 1px solid rgba(232, 240, 236, 0.9);
+}
+
+.history-detail-head h3,
+.history-detail-head p {
+  margin: 0;
+}
+
+.history-detail-head h3 {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-detail-head p {
+  margin-top: 4px;
+  color: var(--soft-ink);
+  font-size: 12px;
+}
+
+.conversation-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 4px 2px 0;
+}
+
+.conversation-message {
+  display: grid;
+  gap: 7px;
+  max-width: min(760px, 100%);
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(228, 238, 233, 0.9);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 8px 18px rgba(103, 137, 125, 0.06);
+}
+
+.conversation-message.user {
+  margin-left: auto;
+  border-color: rgba(166, 213, 194, 0.58);
+  background: var(--mint);
+}
+
+.conversation-message.system,
+.conversation-message.tool,
+.conversation-message.other {
+  max-width: 100%;
+  border-color: rgba(217, 150, 141, 0.24);
+  background: rgba(255, 244, 242, 0.56);
+}
+
+.conversation-message span {
+  color: var(--leaf);
+  font-size: 11px;
+  font-weight: 780;
+  line-height: 1;
+}
+
+.conversation-message p {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.history-empty-state,
+.history-empty-detail {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 220px;
+  color: var(--soft-ink);
+  text-align: center;
+}
+
+.history-empty-state {
+  border: 1px dashed #cfe2da;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.history-empty-state.compact {
+  min-height: 160px;
+  border: 0;
+  background: transparent;
+}
+
+.history-empty-state svg,
+.history-empty-detail svg {
+  color: var(--leaf);
+}
+
+.history-empty-state strong,
+.history-empty-detail strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.history-empty-state span {
+  font-size: 12px;
+}

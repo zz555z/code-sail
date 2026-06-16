@@ -1,0 +1,112 @@
+{
+  "types": [
+    {
+      "name": "ProviderView",
+      "fields": {
+        "id": "string",
+        "name": "string | null",
+        "baseUrl": "string | null",
+        "model": "string | null",
+        "models": "string[]",
+        "token": "string | null",
+        "tokenPresent": "boolean"
+      }
+    },
+    {
+      "name": "AppState",
+      "fields": {
+        "configPath": "string",
+        "configExists": "boolean",
+        "activeProvider": "string | null",
+        "activeModel": "string | null",
+        "providers": "ProviderView[]"
+      }
+    },
+    {
+      "name": "ToolStatus",
+      "fields": {
+        "name": "string",
+        "command": "string",
+        "available": "boolean",
+        "version": "string | null",
+        "detail": "string | null",
+        "installLabel": "string",
+        "installHint": "string",
+        "installUrl": "string"
+      }
+    },
+    {
+      "name": "ProviderDraft",
+      "fields": {
+        "originalId": "string | null",
+        "name": "string",
+        "baseUrl": "string",
+        "model": "string",
+        "token": "string"
+      }
+    },
+    {
+      "name": "FetchModelsResponse",
+      "fields": {
+        "providerId": "string",
+        "models": "string[]"
+      }
+    },
+    {
+      "name": "SaveProviderResponse",
+      "fields": {
+        "providerId": "string"
+      }
+    },
+    {
+      "name": "CopyProviderResponse",
+      "fields": {
+        "providerId": "string"
+      }
+    },
+    {
+      "name": "HistoryMessage",
+      "fields": {
+        "role": "string",
+        "content": "string"
+      }
+    },
+    {
+      "name": "HistorySessionSummary",
+      "fields": {
+        "sessionId": "string",
+        "provider": "string",
+        "title": "string",
+        "timestamp": "number | null",
+        "path": "string",
+        "messageCount": "number"
+      }
+    },
+    {
+      "name": "HistoryProviderGroup",
+      "fields": {
+        "provider": "string",
+        "sessions": "HistorySessionSummary[]"
+      }
+    },
+    {
+      "name": "HistoryConversation",
+      "fields": {
+        "sessionId": "string",
+        "provider": "string",
+        "title": "string",
+        "timestamp": "number | null",
+        "path": "string",
+        "messages": "HistoryMessage[]"
+      }
+    },
+    {
+      "name": "DeleteHistoryResponse",
+      "fields": {
+        "successCount": "number",
+        "failureCount": "number",
+        "errors": "string[]"
+      }
+    }
+  ]
+}

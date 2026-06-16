@@ -1,0 +1,87 @@
+:root[data-theme="dark"] .nav-item::before {
+  background: linear-gradient(135deg, rgba(35, 56, 48, 0.82), rgba(27, 47, 40, 0.78));
+}
+
+:root[data-theme="dark"] .nav-item:hover,
+:root[data-theme="dark"] .nav-item.active,
+:root[data-theme="dark"] .soft-button,
+:root[data-theme="dark"] .fetch-button,
+:root[data-theme="dark"] .theme-icon-button button,
+:root[data-theme="dark"] .row-button.set-current,
+:root[data-theme="dark"] .overview-section-action,
+:root[data-theme="dark"] .tool-status-icon.available,
+:root[data-theme="dark"] .tool-status-row code,
+:root[data-theme="dark"] .provider-summary-row strong {
+  background: var(--mint);
+}
+
+:root[data-theme="dark"] .primary-button {
+  color: #10221b;
+}
+
+:root[data-theme="dark"] .row-button,
+:root[data-theme="dark"] .overview-status-card,
+:root[data-theme="dark"] .tool-status-row,
+:root[data-theme="dark"] .history-summary-grid article,
+:root[data-theme="dark"] .provider-summary-row,
+:root[data-theme="dark"] .history-provider-toggle,
+:root[data-theme="dark"] .history-session-item,
+:root[data-theme="dark"] .conversation-message,
+:root[data-theme="dark"] .model-menu,
+:root[data-theme="dark"] .config-sync-option {
+  border-color: var(--panel-border);
+  background: var(--row-bg-soft);
+}
+
+:root[data-theme="dark"] .config-row,
+:root[data-theme="dark"] .config-row.active,
+:root[data-theme="dark"] .config-row:hover,
+:root[data-theme="dark"] .history-session-item:hover:not(:disabled),
+:root[data-theme="dark"] .history-session-item.selected {
+  border-color: var(--panel-border);
+  background: var(--row-bg-strong);
+}
+
+:root[data-theme="dark"] .config-row::before {
+  background:
+    linear-gradient(135deg, rgba(32, 56, 48, 0.74), rgba(24, 38, 33, 0.34) 62%),
+    radial-gradient(circle at 14% 0%, rgba(80, 138, 118, 0.22), transparent 42%);
+}
+
+:root[data-theme="dark"] .overview-hero {
+  background:
+    linear-gradient(135deg, rgba(22, 36, 30, 0.92), rgba(25, 45, 38, 0.76)),
+    radial-gradient(circle at 10% 0%, rgba(80, 138, 118, 0.24), transparent 48%);
+}
+
+:root[data-theme="dark"] .history-summary-grid article,
+:root[data-theme="dark"] .conversation-message.user {
+  background: rgba(30, 52, 44, 0.72);
+}
+
+:root[data-theme="dark"] .danger-button,
+:root[data-theme="dark"] .restart-codex-button,
+:root[data-theme="dark"] .tool-install-button,
+:root[data-theme="dark"] .tool-status-icon {
+  background: var(--rose-bg);
+}
+
+:root[data-theme="dark"] .empty-configs,
+:root[data-theme="dark"] .history-empty-state,
+:root[data-theme="dark"] .overview-empty-line {
+  border-color: rgba(72, 111, 96, 0.68);
+  background: rgba(20, 32, 27, 0.58);
+}
+
+:root[data-theme="dark"] .model-menu {
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="dark"] input::placeholder {
+  color: #6f837b;
+}
+
+:root[data-theme="dark"] .config-sync-switch,
+:root[data-theme="dark"] .provider-beacon span {
+  background: #334a42;
+}

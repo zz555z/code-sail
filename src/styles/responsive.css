@@ -1,0 +1,192 @@
+@media (max-width: 1280px) {
+  .app-shell {
+    grid-template-columns: 176px minmax(0, 1fr);
+    gap: 14px;
+    padding: 42px 14px 14px;
+  }
+
+  .app-nav,
+  .overview-board,
+  .configs-board,
+  .history-board,
+  .config-editor {
+    border-radius: 28px;
+  }
+
+  .app-nav {
+    padding: 14px 10px;
+  }
+
+  .nav-item {
+    min-height: 52px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+
+  .overview-board,
+  .configs-board,
+  .history-board,
+  .config-editor {
+    padding: 16px;
+  }
+
+  .overview-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(210px, 0.32fr);
+    padding: 14px;
+  }
+
+  .overview-status-card {
+    min-height: 68px;
+    padding: 10px 11px;
+  }
+
+  .panel-title h3 {
+    font-size: 18px;
+  }
+
+  .board-head,
+  .editor-head {
+    margin-bottom: 12px;
+  }
+
+  .soft-button,
+  .primary-button,
+  .danger-button,
+  .fetch-button {
+    min-height: 42px;
+    padding: 0 13px;
+    border-radius: 16px;
+    font-size: 13px;
+  }
+
+  .soft-button.toolbar-icon-button,
+  .primary-button.toolbar-icon-button {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    min-height: 42px;
+    padding: 0;
+  }
+
+  .config-sync-option {
+    width: 172px;
+    min-height: 42px;
+  }
+
+  .config-row {
+    grid-template-columns: 12px minmax(0, 1fr);
+    min-height: 64px;
+    padding: 11px;
+  }
+
+  .history-layout {
+    grid-template-columns: minmax(250px, 330px) minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .history-provider-list {
+    padding-right: 10px;
+  }
+
+  .row-button {
+    width: 31px;
+    height: 31px;
+  }
+
+  .provider-copy {
+    max-width: min(54vw, 460px);
+  }
+
+  input {
+    min-height: 44px;
+    border-radius: 16px;
+    font-size: 14px;
+  }
+
+  .field-grid {
+    gap: 11px;
+  }
+}
+
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .nav-item {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 0;
+  }
+
+  .nav-item span {
+    display: none;
+  }
+
+  .board-actions,
+  .editor-actions {
+    flex-wrap: wrap;
+  }
+
+  .overview-hero,
+  .history-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-status-grid {
+    justify-self: stretch;
+    width: 100%;
+  }
+
+  .overview-current-model strong {
+    font-size: 24px;
+  }
+
+  .tool-status-row {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .tool-status-row code,
+  .tool-install-button {
+    grid-column: 2;
+    width: fit-content;
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .config-sync-option {
+    width: 170px;
+  }
+
+  .model-combobox {
+    grid-template-columns: 1fr;
+  }
+
+  .history-layout {
+    grid-template-columns: 1fr;
+    overflow: auto;
+    scrollbar-width: none;
+  }
+
+  .history-layout::-webkit-scrollbar {
+    display: none;
+  }
+
+  .history-provider-list {
+    max-height: 320px;
+    padding-right: 0;
+    border-right: 0;
+    border-bottom: 1px solid rgba(232, 240, 236, 0.9);
+  }
+
+  .history-detail-panel {
+    min-height: 420px;
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .overview-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
