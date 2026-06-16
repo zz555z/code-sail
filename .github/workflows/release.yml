@@ -16,16 +16,29 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.platform }}
+    name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.platform }}
 
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - macos-latest
-          - ubuntu-22.04
-          - windows-latest
+        include:
+          - name: macOS Intel
+            platform: macos-latest
+            rustTarget: x86_64-apple-darwin
+            tauriArgs: --target x86_64-apple-darwin
+          - name: macOS Apple Silicon
+            platform: macos-latest
+            rustTarget: aarch64-apple-darwin
+            tauriArgs: --target aarch64-apple-darwin
+          - name: Linux
+            platform: ubuntu-22.04
+            rustTarget: ""
+            tauriArgs: ""
+          - name: Windows
+            platform: windows-latest
+            rustTarget: ""
+            tauriArgs: ""
 
     steps:
       - name: Checkout
@@ -39,6 +52,10 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust target
+        if: matrix.rustTarget != ''
+        run: rustup target add ${{ matrix.rustTarget }}
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -69,3 +86,4 @@ jobs:
           releaseBody: "CodeSail desktop release. These packages are unsigned unless signing secrets are configured."
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.tauriArgs }}
