@@ -2,6 +2,8 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};
 
+use crate::storage::optional_non_empty;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolStatus {
@@ -253,13 +255,4 @@ pub(crate) fn open_external_url(url: &str) -> Result<()> {
         .with_context(|| format!("无法打开下载页面: {url}"))?;
 
     Ok(())
-}
-
-fn optional_non_empty(value: &str) -> Option<&str> {
-    let value = value.trim();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
 }

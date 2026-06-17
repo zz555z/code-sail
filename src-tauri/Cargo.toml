@@ -1,6 +1,6 @@
 [package]
 name = "codesail"
-version = "0.0.7"
+version = "0.0.8"
 description = "CodeSail desktop manager for Codex provider configuration"
 authors = ["zdd"]
 edition = "2021"
@@ -15,7 +15,9 @@ base64 = "0.22"
 cbc = { version = "0.1", features = ["alloc"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 dirs = "5.0"
+env_logger = "0.11"
 getrandom = "0.3"
+log = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "http2", "native-tls-alpn", "system-proxy"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }

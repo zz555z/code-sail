@@ -23,7 +23,10 @@ export function useHistorySessions({ setMessage }: UseHistorySessionsOptions) {
 
   const allHistorySessions = useMemo(() => historyGroups.flatMap((group) => group.sessions), [historyGroups]);
   const historySessionCount = allHistorySessions.length;
-  const historyMessageCount = allHistorySessions.reduce((total, session) => total + session.messageCount, 0);
+  const historyMessageCount = useMemo(
+    () => allHistorySessions.reduce((total, session) => total + session.messageCount, 0),
+    [allHistorySessions]
+  );
   const historyProviderStats = useMemo(
     () =>
       historyGroups

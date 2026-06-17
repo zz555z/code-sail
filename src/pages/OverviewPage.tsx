@@ -8,42 +8,13 @@ import {
   Terminal
 } from "lucide-react";
 import { NotificationToast } from "../components/NotificationToast";
+import { useAppServicesContext } from "../contexts/AppServicesContext";
+import { useHistoryContext } from "../contexts/HistoryContext";
+import { useMessage } from "../contexts/MessageContext";
+import { useProviderEditorContext } from "../contexts/ProviderEditorContext";
 import { formatHistoryTime } from "../lib/format";
 import { themeIcon, themeLabel, type ThemePreference } from "../lib/theme";
-import type { AppState, AppUpdateInfo, HistorySessionSummary, ProviderView, ToolStatus } from "../lib/types";
-
-type HistoryProviderStat = {
-  provider: string;
-  sessionCount: number;
-};
-
-type OverviewPageProps = {
-  appVersion: string;
-  appUpdate: AppUpdateInfo | null;
-  state: AppState | null;
-  activeProvider: ProviderView | null;
-  message: string;
-  messageClassName: string;
-  themePreference: ThemePreference;
-  busy: boolean;
-  historyLoading: boolean;
-  toolStatusesLoading: boolean;
-  toolStatuses: ToolStatus[];
-  checkingAppUpdate: boolean;
-  openingCodexTerminal: boolean;
-  openingAppUpdate: boolean;
-  installingTool: string | null;
-  historyProviderStats: HistoryProviderStat[];
-  topHistoryProviderStats: HistoryProviderStat[];
-  historySessionCount: number;
-  historyMessageCount: number;
-  latestHistorySession: HistorySessionSummary | null;
-  onCycleTheme: () => void;
-  onRefresh: () => void;
-  onOpenAppUpdate: () => void;
-  onOpenCodexTerminal: () => void;
-  onOpenToolInstall: (tool: ToolStatus) => void;
-};
+import type { ToolStatus } from "../lib/types";
 
 const fallbackToolStatuses: ToolStatus[] = [
   {
@@ -78,33 +49,39 @@ const fallbackToolStatuses: ToolStatus[] = [
   }
 ];
 
-export function OverviewPage({
-  appVersion,
-  appUpdate,
-  state,
-  activeProvider,
-  message,
-  messageClassName,
-  themePreference,
-  busy,
-  historyLoading,
-  toolStatusesLoading,
-  toolStatuses,
-  checkingAppUpdate,
-  openingCodexTerminal,
-  openingAppUpdate,
-  installingTool,
-  historyProviderStats,
-  topHistoryProviderStats,
-  historySessionCount,
-  historyMessageCount,
-  latestHistorySession,
-  onCycleTheme,
-  onRefresh,
-  onOpenAppUpdate,
-  onOpenCodexTerminal,
-  onOpenToolInstall
-}: OverviewPageProps) {
+type OverviewPageProps = {
+  themePreference: ThemePreference;
+  onCycleTheme: () => void;
+};
+
+export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProps) {
+  const { message, messageClassName } = useMessage();
+  const { state, activeProvider, busy, refresh } = useProviderEditorContext();
+  const {
+    appVersion,
+    appUpdate,
+    checkingAppUpdate,
+    openingAppUpdate,
+    openUpdatePage,
+    refreshAppUpdate,
+    toolStatuses,
+    toolStatusesLoading,
+    openingCodexTerminal,
+    installingTool,
+    refreshToolStatuses,
+    openCodexInTerminal,
+    openToolInstaller
+  } = useAppServicesContext();
+  const {
+    historyLoading,
+    historyProviderStats,
+    topHistoryProviderStats,
+    historySessionCount,
+    historyMessageCount,
+    latestHistorySession,
+    refreshHistory
+  } = useHistoryContext();
+
   const latestVersionLabel = appUpdate?.latestVersion ? `v${appUpdate.latestVersion}` : null;
 
   return (
@@ -130,7 +107,12 @@ export function OverviewPage({
             data-tooltip="刷新状态"
             data-tooltip-placement="left"
             aria-label="刷新状态"
-            onClick={onRefresh}
+            onClick={() => {
+              void refresh();
+              void refreshToolStatuses();
+              void refreshHistory();
+              void refreshAppUpdate();
+            }}
             disabled={busy || historyLoading || toolStatusesLoading}
           >
             <RefreshCw size={17} />
@@ -171,7 +153,7 @@ export function OverviewPage({
                 <button
                   className="version-update-button"
                   type="button"
-                  onClick={onOpenAppUpdate}
+                  onClick={() => void openUpdatePage()}
                   disabled={openingAppUpdate}
                 >
                   <Download size={14} />
@@ -194,7 +176,7 @@ export function OverviewPage({
               data-tooltip={openingCodexTerminal ? "正在打开 Codex" : "在终端打开 Codex"}
               data-tooltip-placement="left"
               aria-label="在终端打开 Codex"
-              onClick={onOpenCodexTerminal}
+              onClick={() => void openCodexInTerminal()}
               disabled={openingCodexTerminal}
             >
               <Terminal size={15} />
@@ -220,7 +202,7 @@ export function OverviewPage({
                     data-tooltip={tool.installHint}
                     data-tooltip-placement="left"
                     aria-label={`${tool.installLabel} ${tool.name}`}
-                    onClick={() => onOpenToolInstall(tool)}
+                    onClick={() => void openToolInstaller(tool)}
                     disabled={installingTool === tool.command}
                   >
                     <Download size={14} />

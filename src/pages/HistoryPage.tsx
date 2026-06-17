@@ -9,46 +9,29 @@ import {
   Trash2
 } from "lucide-react";
 import { NotificationToast } from "../components/NotificationToast";
+import { useHistoryContext } from "../contexts/HistoryContext";
+import { useMessage } from "../contexts/MessageContext";
 import { formatHistoryTime, roleClass, roleLabel } from "../lib/format";
-import type { HistoryConversation, HistoryProviderGroup, HistorySessionSummary } from "../lib/types";
 
-type HistoryPageProps = {
-  message: string;
-  messageClassName: string;
-  historySessionCount: number;
-  historyGroups: HistoryProviderGroup[];
-  historyConversation: HistoryConversation | null;
-  selectedHistoryPath: string | null;
-  selectedHistorySession: HistorySessionSummary | null;
-  expandedHistoryProviders: Record<string, boolean>;
-  historyLoading: boolean;
-  historyBusy: boolean;
-  onRefreshHistory: () => void;
-  onToggleHistoryProvider: (provider: string) => void;
-  onOpenHistorySession: (session: HistorySessionSummary) => void;
-  onResumeHistory: (session: HistorySessionSummary | null) => void;
-  onDeleteHistorySession: (session: HistorySessionSummary | null) => void;
-  onDeleteHistoryProvider: (group: HistoryProviderGroup) => void;
-};
+export function HistoryPage() {
+  const { message, messageClassName } = useMessage();
+  const {
+    historySessionCount,
+    historyGroups,
+    historyConversation,
+    selectedHistoryPath,
+    selectedHistorySession,
+    expandedHistoryProviders,
+    historyLoading,
+    historyBusy,
+    refreshHistory,
+    toggleHistoryProvider,
+    openHistorySession,
+    resumeHistory,
+    removeHistorySession,
+    removeHistoryProvider
+  } = useHistoryContext();
 
-export function HistoryPage({
-  message,
-  messageClassName,
-  historySessionCount,
-  historyGroups,
-  historyConversation,
-  selectedHistoryPath,
-  selectedHistorySession,
-  expandedHistoryProviders,
-  historyLoading,
-  historyBusy,
-  onRefreshHistory,
-  onToggleHistoryProvider,
-  onOpenHistorySession,
-  onResumeHistory,
-  onDeleteHistorySession,
-  onDeleteHistoryProvider
-}: HistoryPageProps) {
   return (
     <section className="history-board">
       <header className="board-head">
@@ -67,7 +50,7 @@ export function HistoryPage({
             data-tooltip="刷新历史"
             data-tooltip-placement="left"
             aria-label="刷新历史"
-            onClick={onRefreshHistory}
+            onClick={() => void refreshHistory()}
             disabled={historyLoading || historyBusy}
           >
             <RefreshCw size={17} />
@@ -88,7 +71,7 @@ export function HistoryPage({
                     <button
                       className="history-provider-toggle"
                       type="button"
-                      onClick={() => onToggleHistoryProvider(group.provider)}
+                      onClick={() => toggleHistoryProvider(group.provider)}
                       aria-expanded={expanded}
                     >
                       {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -102,7 +85,7 @@ export function HistoryPage({
                       data-tooltip="删除该分组历史"
                       data-tooltip-placement="left"
                       aria-label={`删除 ${group.provider} 分组历史`}
-                      onClick={() => onDeleteHistoryProvider(group)}
+                      onClick={() => void removeHistoryProvider(group)}
                       disabled={historyLoading || historyBusy}
                     >
                       <Trash2 size={15} />
@@ -116,7 +99,7 @@ export function HistoryPage({
                           className={`history-session-item ${selectedHistoryPath === session.path ? "selected" : ""}`}
                           key={session.path}
                           type="button"
-                          onClick={() => onOpenHistorySession(session)}
+                          onClick={() => void openHistorySession(session)}
                           disabled={historyLoading || historyBusy}
                         >
                           <span className="history-session-icon">
@@ -161,7 +144,7 @@ export function HistoryPage({
                     data-tooltip="恢复会话"
                     data-tooltip-placement="left"
                     aria-label="恢复会话"
-                    onClick={() => onResumeHistory(selectedHistorySession)}
+                    onClick={() => void resumeHistory(selectedHistorySession)}
                     disabled={historyLoading || historyBusy}
                   >
                     <Play size={15} />
@@ -172,7 +155,7 @@ export function HistoryPage({
                     data-tooltip="删除会话"
                     data-tooltip-placement="left"
                     aria-label="删除会话"
-                    onClick={() => onDeleteHistorySession(selectedHistorySession)}
+                    onClick={() => void removeHistorySession(selectedHistorySession)}
                     disabled={historyLoading || historyBusy}
                   >
                     <Trash2 size={15} />
@@ -182,8 +165,8 @@ export function HistoryPage({
 
               <div className="conversation-list">
                 {historyConversation.messages.length ? (
-                  historyConversation.messages.map((item, index) => (
-                    <article className={`conversation-message ${roleClass(item.role)}`} key={`${index}-${item.role}`}>
+                  historyConversation.messages.map((item) => (
+                    <article className={`conversation-message ${roleClass(item.role)}`} key={`${item.role}-${item.content.length}-${item.content.slice(0, 40)}`}>
                       <span>{roleLabel(item.role)}</span>
                       <p>{item.content}</p>
                     </article>

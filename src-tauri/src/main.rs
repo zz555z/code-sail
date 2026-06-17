@@ -17,6 +17,7 @@ use history::{
 };
 
 fn main() {
+    env_logger::init();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_app_state,

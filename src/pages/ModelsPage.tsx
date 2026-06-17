@@ -1,4 +1,3 @@
-import type { RefObject } from "react";
 import {
   ChevronDown,
   Eye,
@@ -14,81 +13,46 @@ import {
 } from "lucide-react";
 import { NotificationToast } from "../components/NotificationToast";
 import { ProviderRow } from "../components/ProviderRow";
-import type { AppState, ProviderDraft, ProviderView } from "../lib/types";
+import { useMessage } from "../contexts/MessageContext";
+import { useProviderEditorContext } from "../contexts/ProviderEditorContext";
 
-type ModelsPageProps = {
-  state: AppState | null;
-  selected: ProviderView | null;
-  selectedId: string | null;
-  draft: ProviderDraft;
-  models: string[];
-  modelValue: string;
-  providerCount: number;
-  message: string;
-  messageClassName: string;
-  editorOpen: boolean;
-  busy: boolean;
-  restarting: boolean;
-  loadingModels: boolean;
-  modelMenuOpen: boolean;
-  tokenVisible: boolean;
-  updateConfigFile: boolean;
-  canSave: boolean;
-  modelComboboxRef: RefObject<HTMLDivElement>;
-  onSetUpdateConfigFile: (enabled: boolean) => void;
-  onRestartCodex: () => void;
-  onRefresh: () => void;
-  onCreateProvider: () => void;
-  onEditProvider: (provider: ProviderView) => void;
-  onCopyProvider: (providerId: string) => void;
-  onSetCurrentProvider: (provider: ProviderView) => void;
-  onDeleteProvider: (providerId: string) => void;
-  onCloseEditor: () => void;
-  onUpdateDraft: (patch: Partial<ProviderDraft>) => void;
-  onToggleTokenVisible: () => void;
-  onSetModelMenuOpen: (open: boolean | ((current: boolean) => boolean)) => void;
-  onSetModelValue: (model: string) => void;
-  onSelectModel: (model: string) => void;
-  onFetchModels: () => void;
-  onSave: () => void;
-};
+export function ModelsPage() {
+  const { message, messageClassName } = useMessage();
+  const {
+    state,
+    selected,
+    selectedId,
+    draft,
+    models,
+    modelValue,
+    providerCount,
+    editorOpen,
+    busy,
+    restarting,
+    loadingModels,
+    modelMenuOpen,
+    tokenVisible,
+    updateConfigFile,
+    canSave,
+    modelComboboxRef,
+    setUpdateConfigFile,
+    setModelMenuOpen,
+    setModelValue,
+    toggleTokenVisible,
+    refresh,
+    restartCodex,
+    openCreateProvider,
+    openEditProvider,
+    copyProvider,
+    setCurrentProvider,
+    removeProvider,
+    closeEditor,
+    updateDraft,
+    selectModel,
+    fetchProviderModels,
+    saveCurrentProvider
+  } = useProviderEditorContext();
 
-export function ModelsPage({
-  state,
-  selected,
-  selectedId,
-  draft,
-  models,
-  modelValue,
-  providerCount,
-  message,
-  messageClassName,
-  editorOpen,
-  busy,
-  restarting,
-  loadingModels,
-  modelMenuOpen,
-  tokenVisible,
-  updateConfigFile,
-  canSave,
-  modelComboboxRef,
-  onSetUpdateConfigFile,
-  onRestartCodex,
-  onRefresh,
-  onCreateProvider,
-  onEditProvider,
-  onCopyProvider,
-  onSetCurrentProvider,
-  onDeleteProvider,
-  onCloseEditor,
-  onUpdateDraft,
-  onToggleTokenVisible,
-  onSetModelMenuOpen,
-  onSetModelValue,
-  onSelectModel,
-  onFetchModels,
-  onSave
-}: ModelsPageProps) {
   const toast = <NotificationToast message={message} messageClassName={messageClassName} />;
 
   return (
@@ -116,7 +80,7 @@ export function ModelsPage({
                   checked={updateConfigFile}
                   role="switch"
                   type="checkbox"
-                  onChange={(event) => onSetUpdateConfigFile(event.target.checked)}
+                  onChange={(event) => setUpdateConfigFile(event.target.checked)}
                 />
                 <span className="config-sync-switch" aria-hidden="true">
                   <span />
@@ -129,7 +93,7 @@ export function ModelsPage({
                 data-tooltip={restarting ? "正在重启 Codex" : "重启 Codex"}
                 data-tooltip-placement="left"
                 aria-label="重启 Codex"
-                onClick={onRestartCodex}
+                onClick={() => void restartCodex()}
                 disabled={busy || restarting}
               >
                 <Power size={17} />
@@ -140,7 +104,7 @@ export function ModelsPage({
                 data-tooltip="刷新"
                 data-tooltip-placement="left"
                 aria-label="刷新"
-                onClick={onRefresh}
+                onClick={() => void refresh()}
                 disabled={busy}
               >
                 <RefreshCw size={17} />
@@ -151,7 +115,7 @@ export function ModelsPage({
                 data-tooltip="新增配置"
                 data-tooltip-placement="left"
                 aria-label="新增配置"
-                onClick={onCreateProvider}
+                onClick={openCreateProvider}
                 disabled={busy}
               >
                 <Plus size={17} />
@@ -175,10 +139,10 @@ export function ModelsPage({
                   }
                   selected={editorOpen && provider.id === selectedId}
                   busy={busy}
-                  onEdit={() => onEditProvider(provider)}
-                  onCopy={() => onCopyProvider(provider.id)}
-                  onSetCurrent={() => onSetCurrentProvider(provider)}
-                  onDelete={() => onDeleteProvider(provider.id)}
+                  onEdit={() => openEditProvider(provider)}
+                  onCopy={() => void copyProvider(provider.id)}
+                  onSetCurrent={() => void setCurrentProvider(provider)}
+                  onDelete={() => void removeProvider(provider.id)}
                 />
               ))
             ) : (
@@ -202,7 +166,7 @@ export function ModelsPage({
             </div>
 
             <div className="editor-actions">
-              <button className="soft-button" type="button" onClick={onCloseEditor} disabled={busy}>
+              <button className="soft-button" type="button" onClick={closeEditor} disabled={busy}>
                 <X size={17} />
                 返回列表
               </button>
@@ -227,7 +191,7 @@ export function ModelsPage({
                 <span>Name</span>
                 <input
                   value={draft.name}
-                  onChange={(event) => onUpdateDraft({ name: event.target.value })}
+                  onChange={(event) => updateDraft({ name: event.target.value })}
                   placeholder="显示名称"
                 />
               </label>
@@ -235,7 +199,7 @@ export function ModelsPage({
                 <span>Base URL</span>
                 <input
                   value={draft.baseUrl}
-                  onChange={(event) => onUpdateDraft({ baseUrl: event.target.value })}
+                  onChange={(event) => updateDraft({ baseUrl: event.target.value })}
                   placeholder="https://example.com/v1"
                 />
               </label>
@@ -245,7 +209,7 @@ export function ModelsPage({
                   <input
                     value={draft.token}
                     type={tokenVisible ? "text" : "password"}
-                    onChange={(event) => onUpdateDraft({ token: event.target.value })}
+                    onChange={(event) => updateDraft({ token: event.target.value })}
                     placeholder="sk-..."
                   />
                   <button
@@ -254,7 +218,7 @@ export function ModelsPage({
                     data-tooltip={tokenVisible ? "隐藏 Token" : "显示 Token"}
                     data-tooltip-placement="left"
                     aria-label={tokenVisible ? "隐藏 Token" : "显示 Token"}
-                    onClick={onToggleTokenVisible}
+                    onClick={toggleTokenVisible}
                   >
                     {tokenVisible ? <EyeOff size={17} /> : <Eye size={17} />}
                   </button>
@@ -269,7 +233,7 @@ export function ModelsPage({
                       ref={modelComboboxRef}
                       onBlur={(event) => {
                         if (!event.currentTarget.contains(event.relatedTarget)) {
-                          onSetModelMenuOpen(false);
+                          setModelMenuOpen(false);
                         }
                       }}
                     >
@@ -278,17 +242,17 @@ export function ModelsPage({
                         role="combobox"
                         aria-expanded={modelMenuOpen}
                         aria-controls="model-options"
-                        onFocus={() => onSetModelMenuOpen(models.length > 0)}
-                        onClick={() => onSetModelMenuOpen(models.length > 0)}
+                        onFocus={() => setModelMenuOpen(models.length > 0)}
+                        onClick={() => setModelMenuOpen(models.length > 0)}
                         onChange={(event) => {
                           const nextModel = event.target.value;
-                          onSetModelValue(nextModel);
-                          onUpdateDraft({ model: nextModel });
-                          onSetModelMenuOpen(models.length > 0);
+                          setModelValue(nextModel);
+                          updateDraft({ model: nextModel });
+                          setModelMenuOpen(models.length > 0);
                         }}
                         onKeyDown={(event) => {
                           if (event.key === "Escape") {
-                            onSetModelMenuOpen(false);
+                            setModelMenuOpen(false);
                           }
                         }}
                         placeholder="选择模型或手动填写"
@@ -301,7 +265,7 @@ export function ModelsPage({
                         aria-label="展开模型列表"
                         disabled={!models.length}
                         onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => onSetModelMenuOpen((open) => (models.length ? !open : false))}
+                        onClick={() => setModelMenuOpen((open) => (models.length ? !open : false))}
                       >
                         <ChevronDown size={17} />
                       </button>
@@ -317,12 +281,12 @@ export function ModelsPage({
                               onMouseDown={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
-                                onSelectModel(model);
+                                selectModel(model);
                               }}
                               onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
-                                onSelectModel(model);
+                                selectModel(model);
                               }}
                             >
                               {model}
@@ -334,7 +298,7 @@ export function ModelsPage({
                     <button
                       className="fetch-button"
                       type="button"
-                      onClick={onFetchModels}
+                      onClick={() => void fetchProviderModels()}
                       disabled={loadingModels || busy}
                     >
                       <RefreshCw size={17} />
@@ -351,7 +315,7 @@ export function ModelsPage({
               <button
                 className="danger-button"
                 type="button"
-                onClick={() => onDeleteProvider(selected.id)}
+                onClick={() => void removeProvider(selected.id)}
                 disabled={busy}
               >
                 <Trash2 size={17} />
@@ -361,7 +325,7 @@ export function ModelsPage({
               <span />
             )}
 
-            <button className="primary-button" type="button" onClick={onSave} disabled={busy || !canSave}>
+            <button className="primary-button" type="button" onClick={() => void saveCurrentProvider()} disabled={busy || !canSave}>
               <Save size={17} />
               保存
             </button>

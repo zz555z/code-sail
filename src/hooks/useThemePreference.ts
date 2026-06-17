@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   nextThemePreference,
   persistThemePreference,
@@ -25,6 +25,6 @@ export function useThemePreference() {
 
   return {
     themePreference,
-    cycleTheme: () => setThemePreference((current) => nextThemePreference(current))
+    cycleTheme: useCallback(() => setThemePreference((current) => nextThemePreference(current)), [])
   };
 }

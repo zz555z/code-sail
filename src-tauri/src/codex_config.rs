@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use chrono::Local;
 use serde_json::Value;
-use std::{env, fs, path::{Path, PathBuf}};
+use std::{collections::HashSet, env, fs, path::{Path, PathBuf}};
 use toml_edit::{value, DocumentMut, Item, Table};
 
 use crate::storage::{
@@ -151,7 +151,7 @@ fn backup_file_if_exists(path: &Path) -> Result<Option<PathBuf>> {
     let backup = PathBuf::from(format!(
         "{}.bak.{}",
         path.display(),
-        Local::now().format("%Y%m%d")
+        Local::now().format("%Y%m%d_%H%M%S")
     ));
     if !backup.exists() {
         fs::copy(path, &backup).with_context(|| {
@@ -181,29 +181,30 @@ pub(crate) fn normalize_base_url(input: &str) -> String {
 
 pub(crate) fn parse_model_ids(body: &Value) -> Vec<String> {
     let mut models = Vec::new();
-    collect_model_ids(body, &mut models);
+    let mut seen = HashSet::new();
+    collect_model_ids(body, &mut models, &mut seen);
     models
 }
 
-fn collect_model_ids(value: &Value, models: &mut Vec<String>) {
+fn collect_model_ids(value: &Value, models: &mut Vec<String>, seen: &mut HashSet<String>) {
     match value {
         Value::Array(items) => {
             for item in items {
                 if let Some(id) = item.as_str() {
-                    push_model_id(id, models);
+                    push_model_id(id, models, seen);
                 } else {
-                    collect_model_ids(item, models);
+                    collect_model_ids(item, models, seen);
                 }
             }
         }
         Value::Object(map) => {
             if let Some(id) = map.get("id").and_then(Value::as_str) {
-                push_model_id(id, models);
+                push_model_id(id, models, seen);
             }
 
             for item in map.values() {
                 if !item.is_string() {
-                    collect_model_ids(item, models);
+                    collect_model_ids(item, models, seen);
                 }
             }
         }
@@ -211,9 +212,9 @@ fn collect_model_ids(value: &Value, models: &mut Vec<String>) {
     }
 }
 
-fn push_model_id(id: &str, models: &mut Vec<String>) {
+fn push_model_id(id: &str, models: &mut Vec<String>, seen: &mut HashSet<String>) {
     let id = id.trim();
-    if !id.is_empty() && !models.iter().any(|existing| existing == id) {
+    if !id.is_empty() && seen.insert(id.to_string()) {
         models.push(id.to_string());
     }
 }

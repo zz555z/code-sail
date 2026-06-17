@@ -1,7 +1,12 @@
-import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { History, LayoutDashboard, Settings2 } from "lucide-react";
 import packageJson from "../package.json";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { AppServicesProvider } from "./contexts/AppServicesContext";
+import { HistoryProvider } from "./contexts/HistoryContext";
+import { MessageProvider } from "./contexts/MessageContext";
+import { ProviderEditorProvider } from "./contexts/ProviderEditorContext";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useHistorySessions } from "./hooks/useHistorySessions";
 import { useProviderEditor } from "./hooks/useProviderEditor";
@@ -25,97 +30,56 @@ export function App() {
   const { message, setMessage, setPaused: setMessagePaused, messageClassName } = useTransientMessage();
   const { themePreference, cycleTheme } = useThemePreference();
   const providerEditor = useProviderEditor({ setMessage, setMessagePaused });
-  const {
-    state,
-    selected,
-    selectedId,
-    draft,
-    models,
-    modelValue,
-    providerCount,
-    activeProvider,
-    editorOpen,
-    busy,
-    restarting,
-    loadingModels,
-    modelMenuOpen,
-    tokenVisible,
-    updateConfigFile,
-    canSave,
-    modelComboboxRef,
-    setUpdateConfigFile,
-    setModelMenuOpen,
-    setModelValue,
-    toggleTokenVisible,
-    refresh,
-    restartCodex,
-    openCreateProvider,
-    openEditProvider,
-    copyProvider,
-    setCurrentProvider,
-    removeProvider,
-    closeEditor,
-    updateDraft,
-    selectModel,
-    fetchProviderModels,
-    saveCurrentProvider
-  } = providerEditor;
-  const {
-    toolStatuses,
-    toolStatusesLoading,
-    openingCodexTerminal,
-    installingTool,
-    refreshToolStatuses,
-    openCodexInTerminal,
-    openToolInstaller
-  } = useToolStatuses({ setMessage });
-  const {
-    historyGroups,
-    historyConversation,
-    selectedHistoryPath,
-    selectedHistorySession,
-    expandedHistoryProviders,
-    historyLoading,
-    historyBusy,
-    historyProviderStats,
-    topHistoryProviderStats,
-    historySessionCount,
-    historyMessageCount,
-    latestHistorySession,
-    refreshHistory,
-    openHistorySession,
-    toggleHistoryProvider,
-    resumeHistory,
-    removeHistorySession,
-    removeHistoryProvider
-  } = useHistorySessions({ setMessage });
-  const {
-    appUpdate,
-    checkingAppUpdate,
-    openingAppUpdate,
-    refreshAppUpdate,
-    openUpdatePage
-  } = useAppUpdate({ appVersion, setMessage });
+  const toolStatuses = useToolStatuses({ setMessage });
+  const historySessions = useHistorySessions({ setMessage });
+  const appUpdate = useAppUpdate({ appVersion, setMessage });
 
   useEffect(() => {
-    void refresh();
-    void refreshToolStatuses();
-    void refreshAppUpdate();
+    void providerEditor.refresh();
+    void toolStatuses.refreshToolStatuses();
+    void appUpdate.refreshAppUpdate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (activePage === "history" || activePage === "overview") {
-      void refreshHistory();
+      void historySessions.refreshHistory();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePage]);
 
-  const navItems: Array<{ id: PageId; label: string; icon: ReactNode }> = [
-    { id: "overview", label: "概览", icon: <LayoutDashboard size={20} /> },
-    { id: "models", label: "模型配置", icon: <Settings2 size={20} /> },
-    { id: "history", label: "历史记录", icon: <History size={20} /> }
-  ];
+  const messageValue = useMemo(
+    () => ({ message, messageClassName, setMessage, setMessagePaused }),
+    [message, messageClassName, setMessage, setMessagePaused]
+  );
+
+  const appServicesValue = useMemo(
+    () => ({
+      appVersion,
+      appUpdate: appUpdate.appUpdate,
+      checkingAppUpdate: appUpdate.checkingAppUpdate,
+      openingAppUpdate: appUpdate.openingAppUpdate,
+      refreshAppUpdate: appUpdate.refreshAppUpdate,
+      openUpdatePage: appUpdate.openUpdatePage,
+      toolStatuses: toolStatuses.toolStatuses,
+      toolStatusesLoading: toolStatuses.toolStatusesLoading,
+      openingCodexTerminal: toolStatuses.openingCodexTerminal,
+      installingTool: toolStatuses.installingTool,
+      refreshToolStatuses: toolStatuses.refreshToolStatuses,
+      openCodexInTerminal: toolStatuses.openCodexInTerminal,
+      openToolInstaller: toolStatuses.openToolInstaller
+    }),
+    [appVersion, appUpdate, toolStatuses]
+  );
+
+  const navItems: Array<{ id: PageId; label: string; icon: ReactNode }> = useMemo(
+    () => [
+      { id: "overview", label: "概览", icon: <LayoutDashboard size={20} /> },
+      { id: "models", label: "模型配置", icon: <Settings2 size={20} /> },
+      { id: "history", label: "历史记录", icon: <History size={20} /> }
+    ],
+    []
+  );
 
   return (
     <main className="app-shell">
@@ -139,102 +103,35 @@ export function App() {
         </nav>
       </aside>
 
-      <section className="workbench">
-        {activePage === "overview" ? (
-          <OverviewPage
-            appVersion={appVersion}
-            appUpdate={appUpdate}
-            state={state}
-            activeProvider={activeProvider}
-            message={message}
-            messageClassName={messageClassName}
-            themePreference={themePreference}
-            busy={busy}
-            historyLoading={historyLoading}
-            toolStatusesLoading={toolStatusesLoading}
-            toolStatuses={toolStatuses}
-            checkingAppUpdate={checkingAppUpdate}
-            openingCodexTerminal={openingCodexTerminal}
-            openingAppUpdate={openingAppUpdate}
-            installingTool={installingTool}
-            historyProviderStats={historyProviderStats}
-            topHistoryProviderStats={topHistoryProviderStats}
-            historySessionCount={historySessionCount}
-            historyMessageCount={historyMessageCount}
-            latestHistorySession={latestHistorySession}
-            onCycleTheme={cycleTheme}
-            onRefresh={() => {
-              void refresh();
-              void refreshToolStatuses();
-              void refreshHistory();
-              void refreshAppUpdate();
-            }}
-            onOpenAppUpdate={() => void openUpdatePage()}
-            onOpenCodexTerminal={() => void openCodexInTerminal()}
-            onOpenToolInstall={(tool) => void openToolInstaller(tool)}
-          />
-        ) : null}
+      <ErrorBoundary>
+        <MessageProvider value={messageValue}>
+          <ProviderEditorProvider value={providerEditor}>
+            <AppServicesProvider value={appServicesValue}>
+              <HistoryProvider value={historySessions}>
+                <section className="workbench">
+                  {activePage === "overview" ? (
+                    <ErrorBoundary>
+                      <OverviewPage themePreference={themePreference} onCycleTheme={cycleTheme} />
+                    </ErrorBoundary>
+                  ) : null}
 
-        {activePage === "history" ? (
-          <HistoryPage
-            message={message}
-            messageClassName={messageClassName}
-            historySessionCount={historySessionCount}
-            historyGroups={historyGroups}
-            historyConversation={historyConversation}
-            selectedHistoryPath={selectedHistoryPath}
-            selectedHistorySession={selectedHistorySession}
-            expandedHistoryProviders={expandedHistoryProviders}
-            historyLoading={historyLoading}
-            historyBusy={historyBusy}
-            onRefreshHistory={() => void refreshHistory()}
-            onToggleHistoryProvider={toggleHistoryProvider}
-            onOpenHistorySession={(session) => void openHistorySession(session)}
-            onResumeHistory={(session) => void resumeHistory(session)}
-            onDeleteHistorySession={(session) => void removeHistorySession(session)}
-            onDeleteHistoryProvider={(group) => void removeHistoryProvider(group)}
-          />
-        ) : null}
+                  {activePage === "history" ? (
+                    <ErrorBoundary>
+                      <HistoryPage />
+                    </ErrorBoundary>
+                  ) : null}
 
-        {activePage === "models" ? (
-          <ModelsPage
-            state={state}
-            selected={selected}
-            selectedId={selectedId}
-            draft={draft}
-            models={models}
-            modelValue={modelValue}
-            providerCount={providerCount}
-            message={message}
-            messageClassName={messageClassName}
-            editorOpen={editorOpen}
-            busy={busy}
-            restarting={restarting}
-            loadingModels={loadingModels}
-            modelMenuOpen={modelMenuOpen}
-            tokenVisible={tokenVisible}
-            updateConfigFile={updateConfigFile}
-            canSave={canSave}
-            modelComboboxRef={modelComboboxRef}
-            onSetUpdateConfigFile={setUpdateConfigFile}
-            onRestartCodex={() => void restartCodex()}
-            onRefresh={() => void refresh()}
-            onCreateProvider={openCreateProvider}
-            onEditProvider={openEditProvider}
-            onCopyProvider={(providerId) => void copyProvider(providerId)}
-            onSetCurrentProvider={(provider) => void setCurrentProvider(provider)}
-            onDeleteProvider={(providerId) => void removeProvider(providerId)}
-            onCloseEditor={closeEditor}
-            onUpdateDraft={updateDraft}
-            onToggleTokenVisible={toggleTokenVisible}
-            onSetModelMenuOpen={setModelMenuOpen}
-            onSetModelValue={setModelValue}
-            onSelectModel={selectModel}
-            onFetchModels={() => void fetchProviderModels()}
-            onSave={() => void saveCurrentProvider()}
-          />
-        ) : null}
-      </section>
+                  {activePage === "models" ? (
+                    <ErrorBoundary>
+                      <ModelsPage />
+                    </ErrorBoundary>
+                  ) : null}
+                </section>
+              </HistoryProvider>
+            </AppServicesProvider>
+          </ProviderEditorProvider>
+        </MessageProvider>
+      </ErrorBoundary>
     </main>
   );
 }

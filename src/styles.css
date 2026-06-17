@@ -1,4 +1,5 @@
 @import "./styles/base.css";
+@import "./styles/components/error-boundary.css";
 @import "./styles/components/notification-toast.css";
 @import "./styles/components/provider-row.css";
 @import "./styles/pages/overview.css";

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Copy, MousePointerClick, Pencil, Trash2 } from "lucide-react";
 import type { ProviderView } from "../lib/types";
 
@@ -13,7 +14,7 @@ type ProviderRowProps = {
   onDelete: () => void;
 };
 
-export function ProviderRow({
+export const ProviderRow = memo(function ProviderRow({
   provider,
   active,
   activeModel,
@@ -96,4 +97,4 @@ export function ProviderRow({
       </div>
     </article>
   );
-}
+});

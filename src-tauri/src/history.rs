@@ -91,6 +91,8 @@ struct CachedSummary {
 
 static SUMMARY_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedSummary>>> = OnceLock::new();
 
+const MAX_SESSIONS: usize = 200;
+
 #[tauri::command]
 pub async fn list_history_sessions() -> Result<Vec<HistoryProviderGroup>, String> {
     run_background_task("codex-list-history-sessions", list_history_sessions_inner)
@@ -150,28 +152,32 @@ fn list_history_sessions_inner() -> Result<Vec<HistoryProviderGroup>> {
     collect_session_files(&root, &mut session_files)?;
     prune_summary_cache(&session_files);
 
+    let mut all_sessions: Vec<HistorySessionSummary> = session_files
+        .iter()
+        .filter_map(|f| summarize_session_file_cached(f).transpose())
+        .collect::<Result<Vec<_>>>()?;
+
+    all_sessions.sort_by(|left, right| {
+        right
+            .timestamp
+            .unwrap_or_default()
+            .cmp(&left.timestamp.unwrap_or_default())
+            .then_with(|| left.title.to_lowercase().cmp(&right.title.to_lowercase()))
+    });
+
+    all_sessions.truncate(MAX_SESSIONS);
+
     let mut groups = BTreeMap::<String, Vec<HistorySessionSummary>>::new();
-    for session_file in session_files {
-        if let Some(summary) = summarize_session_file_cached(&session_file)? {
-            groups
-                .entry(summary.provider.clone())
-                .or_default()
-                .push(summary);
-        }
+    for summary in all_sessions {
+        groups
+            .entry(summary.provider.clone())
+            .or_default()
+            .push(summary);
     }
 
     let mut grouped = groups
         .into_iter()
-        .map(|(provider, mut sessions)| {
-            sessions.sort_by(|left, right| {
-                right
-                    .timestamp
-                    .unwrap_or_default()
-                    .cmp(&left.timestamp.unwrap_or_default())
-                    .then_with(|| left.title.to_lowercase().cmp(&right.title.to_lowercase()))
-            });
-            HistoryProviderGroup { provider, sessions }
-        })
+        .map(|(provider, sessions)| HistoryProviderGroup { provider, sessions })
         .collect::<Vec<_>>();
 
     grouped.sort_by(|left, right| left.provider.to_lowercase().cmp(&right.provider.to_lowercase()));
