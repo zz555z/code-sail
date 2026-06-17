@@ -2,6 +2,7 @@ import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { History, LayoutDashboard, Settings2 } from "lucide-react";
 import packageJson from "../package.json";
+import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useHistorySessions } from "./hooks/useHistorySessions";
 import { useProviderEditor } from "./hooks/useProviderEditor";
 import { useThemePreference } from "./hooks/useThemePreference";
@@ -20,6 +21,7 @@ function startWindowDrag(event: MouseEvent<HTMLElement>) {
 
 export function App() {
   const [activePage, setActivePage] = useState<PageId>("overview");
+  const appVersion = packageJson.version;
   const { message, setMessage, setPaused: setMessagePaused, messageClassName } = useTransientMessage();
   const { themePreference, cycleTheme } = useThemePreference();
   const providerEditor = useProviderEditor({ setMessage, setMessagePaused });
@@ -87,10 +89,18 @@ export function App() {
     removeHistorySession,
     removeHistoryProvider
   } = useHistorySessions({ setMessage });
+  const {
+    appUpdate,
+    checkingAppUpdate,
+    openingAppUpdate,
+    refreshAppUpdate,
+    openUpdatePage
+  } = useAppUpdate({ appVersion, setMessage });
 
   useEffect(() => {
     void refresh();
     void refreshToolStatuses();
+    void refreshAppUpdate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -132,7 +142,8 @@ export function App() {
       <section className="workbench">
         {activePage === "overview" ? (
           <OverviewPage
-            appVersion={packageJson.version}
+            appVersion={appVersion}
+            appUpdate={appUpdate}
             state={state}
             activeProvider={activeProvider}
             message={message}
@@ -142,7 +153,9 @@ export function App() {
             historyLoading={historyLoading}
             toolStatusesLoading={toolStatusesLoading}
             toolStatuses={toolStatuses}
+            checkingAppUpdate={checkingAppUpdate}
             openingCodexTerminal={openingCodexTerminal}
+            openingAppUpdate={openingAppUpdate}
             installingTool={installingTool}
             historyProviderStats={historyProviderStats}
             topHistoryProviderStats={topHistoryProviderStats}
@@ -154,7 +167,9 @@ export function App() {
               void refresh();
               void refreshToolStatuses();
               void refreshHistory();
+              void refreshAppUpdate();
             }}
+            onOpenAppUpdate={() => void openUpdatePage()}
             onOpenCodexTerminal={() => void openCodexInTerminal()}
             onOpenToolInstall={(tool) => void openToolInstaller(tool)}
           />

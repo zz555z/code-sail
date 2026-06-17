@@ -93,6 +93,11 @@
   background: rgba(255, 255, 255, 0.66);
 }
 
+.overview-status-card.has-update {
+  border-color: rgba(217, 150, 141, 0.46);
+  background: rgba(255, 247, 245, 0.78);
+}
+
 .overview-status-card strong {
   color: var(--ink);
   font-size: 18px;
@@ -107,6 +112,36 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.version-update-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: max-content;
+  min-height: 30px;
+  margin-top: 4px;
+  padding: 0 10px;
+  border: 1px solid rgba(217, 150, 141, 0.42);
+  border-radius: 11px;
+  color: var(--rose);
+  background: var(--rose-bg);
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
+  transition:
+    border-color 180ms var(--ease-ui),
+    background 180ms var(--ease-ui),
+    box-shadow 200ms var(--ease-ui),
+    transform 220ms var(--ease-snap);
+}
+
+.version-update-button:hover:not(:disabled) {
+  border-color: rgba(217, 150, 141, 0.62);
+  background: #fff0ed;
+  box-shadow: 0 10px 20px rgba(194, 111, 102, 0.1);
+  transform: translate3d(0, -1px, 0);
 }
 
 .overview-section {

@@ -30,6 +30,16 @@ export type ToolStatus = {
   installUrl: string;
 };
 
+export type AppUpdateInfo = {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseUrl: string;
+  releaseName: string | null;
+  publishedAt: string | null;
+  detail: string | null;
+};
+
 export type ProviderDraft = {
   originalId: string | null;
   name: string;

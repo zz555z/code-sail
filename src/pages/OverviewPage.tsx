@@ -10,7 +10,7 @@ import {
 import { NotificationToast } from "../components/NotificationToast";
 import { formatHistoryTime } from "../lib/format";
 import { themeIcon, themeLabel, type ThemePreference } from "../lib/theme";
-import type { AppState, HistorySessionSummary, ProviderView, ToolStatus } from "../lib/types";
+import type { AppState, AppUpdateInfo, HistorySessionSummary, ProviderView, ToolStatus } from "../lib/types";
 
 type HistoryProviderStat = {
   provider: string;
@@ -19,6 +19,7 @@ type HistoryProviderStat = {
 
 type OverviewPageProps = {
   appVersion: string;
+  appUpdate: AppUpdateInfo | null;
   state: AppState | null;
   activeProvider: ProviderView | null;
   message: string;
@@ -28,7 +29,9 @@ type OverviewPageProps = {
   historyLoading: boolean;
   toolStatusesLoading: boolean;
   toolStatuses: ToolStatus[];
+  checkingAppUpdate: boolean;
   openingCodexTerminal: boolean;
+  openingAppUpdate: boolean;
   installingTool: string | null;
   historyProviderStats: HistoryProviderStat[];
   topHistoryProviderStats: HistoryProviderStat[];
@@ -37,6 +40,7 @@ type OverviewPageProps = {
   latestHistorySession: HistorySessionSummary | null;
   onCycleTheme: () => void;
   onRefresh: () => void;
+  onOpenAppUpdate: () => void;
   onOpenCodexTerminal: () => void;
   onOpenToolInstall: (tool: ToolStatus) => void;
 };
@@ -76,6 +80,7 @@ const fallbackToolStatuses: ToolStatus[] = [
 
 export function OverviewPage({
   appVersion,
+  appUpdate,
   state,
   activeProvider,
   message,
@@ -85,7 +90,9 @@ export function OverviewPage({
   historyLoading,
   toolStatusesLoading,
   toolStatuses,
+  checkingAppUpdate,
   openingCodexTerminal,
+  openingAppUpdate,
   installingTool,
   historyProviderStats,
   topHistoryProviderStats,
@@ -94,9 +101,12 @@ export function OverviewPage({
   latestHistorySession,
   onCycleTheme,
   onRefresh,
+  onOpenAppUpdate,
   onOpenCodexTerminal,
   onOpenToolInstall
 }: OverviewPageProps) {
+  const latestVersionLabel = appUpdate?.latestVersion ? `v${appUpdate.latestVersion}` : null;
+
   return (
     <section className="overview-board">
       <header className="board-head">
@@ -143,10 +153,31 @@ export function OverviewPage({
           </div>
 
           <div className="overview-status-grid">
-            <article className="overview-status-card">
+            <article className={`overview-status-card ${appUpdate?.updateAvailable ? "has-update" : ""}`}>
               <span>当前版本</span>
               <strong>v{appVersion}</strong>
-              <em>CodeSail</em>
+              <em>
+                {checkingAppUpdate
+                  ? "检查更新中"
+                  : appUpdate?.updateAvailable && latestVersionLabel
+                    ? `发现 ${latestVersionLabel}`
+                    : appUpdate?.detail
+                      ? appUpdate.detail
+                      : latestVersionLabel
+                        ? "已是最新"
+                        : "CodeSail"}
+              </em>
+              {appUpdate?.updateAvailable ? (
+                <button
+                  className="version-update-button"
+                  type="button"
+                  onClick={onOpenAppUpdate}
+                  disabled={openingAppUpdate}
+                >
+                  <Download size={14} />
+                  {openingAppUpdate ? "打开中" : "更新"}
+                </button>
+              ) : null}
             </article>
           </div>
         </section>

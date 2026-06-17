@@ -226,7 +226,7 @@ pub(crate) fn open_tool_install_inner(command: &str) -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn open_external_url(url: &str) -> Result<()> {
+pub(crate) fn open_external_url(url: &str) -> Result<()> {
     Command::new("/usr/bin/open")
         .arg(url)
         .spawn()
@@ -236,7 +236,7 @@ fn open_external_url(url: &str) -> Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn open_external_url(url: &str) -> Result<()> {
+pub(crate) fn open_external_url(url: &str) -> Result<()> {
     Command::new("cmd")
         .args(["/C", "start", "", url])
         .spawn()
@@ -246,7 +246,7 @@ fn open_external_url(url: &str) -> Result<()> {
 }
 
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-fn open_external_url(url: &str) -> Result<()> {
+pub(crate) fn open_external_url(url: &str) -> Result<()> {
     Command::new("xdg-open")
         .arg(url)
         .spawn()

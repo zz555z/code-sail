@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppState,
+  AppUpdateInfo,
   CopyProviderResponse,
   DeleteHistoryResponse,
   FetchModelsResponse,
@@ -25,6 +26,14 @@ export async function getAppState(): Promise<AppState> {
 
 export async function getToolStatuses(): Promise<ToolStatus[]> {
   return await invokeCommand<ToolStatus[]>("get_tool_statuses");
+}
+
+export async function checkAppUpdate(currentVersion: string): Promise<AppUpdateInfo> {
+  return await invokeCommand<AppUpdateInfo>("check_app_update", { currentVersion });
+}
+
+export async function openAppUpdate(): Promise<void> {
+  await invokeCommand<void>("open_app_update");
 }
 
 export async function saveProvider(provider: ProviderDraft, updateConfig: boolean): Promise<SaveProviderResponse> {

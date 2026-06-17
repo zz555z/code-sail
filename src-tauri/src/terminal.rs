@@ -1,13 +1,29 @@
-use anyhow::{bail, Context, Result};
-use std::{env, fs, process::Command, thread, time::Duration};
+use anyhow::{Context, Result};
+use std::{process::Command, thread, time::Duration};
+
+#[cfg(target_os = "macos")]
+use std::{
+    env, fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[cfg(target_os = "macos")]
 use std::os::unix::fs::PermissionsExt;
 
-#[cfg(target_os = "macos")]
 pub(crate) fn open_codex_terminal_inner() -> Result<()> {
-    let script_path = env::temp_dir().join("codex-open-terminal.command");
-    let script = r#"#!/bin/zsh -l
+    open_codex_command_in_terminal(&[])
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn open_codex_command_in_terminal(args: &[&str]) -> Result<()> {
+    let script_path = env::temp_dir().join(format!("codesail-codex-{}.command", timestamp_millis()));
+    let command_line = std::iter::once("codex")
+        .chain(args.iter().copied())
+        .map(shell_single_quote)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let script = format!(
+        r#"#!/bin/zsh -l
 export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 if [ -f "$HOME/.zprofile" ]; then
@@ -23,7 +39,7 @@ if ! command -v codex >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
   nvm use --silent default >/dev/null 2>&1 || true
 fi
 
-codex
+{command_line}
 status=$?
 echo
 if [ $status -ne 0 ]; then
@@ -31,7 +47,8 @@ if [ $status -ne 0 ]; then
 fi
 echo "Press any key to close this window..."
 read -k 1
-"#;
+"#
+    );
 
     fs::write(&script_path, script)
         .with_context(|| format!("无法创建 Codex 终端脚本: {}", script_path.display()))?;
@@ -47,9 +64,12 @@ read -k 1
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn open_codex_terminal_inner() -> Result<()> {
+pub(crate) fn open_codex_command_in_terminal(args: &[&str]) -> Result<()> {
+    let mut command_args = vec!["/C", "start", "", "cmd", "/K", "codex"];
+    command_args.extend(args.iter().copied());
+
     Command::new("cmd")
-        .args(["/C", "start", "cmd", "/K", "codex"])
+        .args(command_args)
         .spawn()
         .context("无法打开终端启动 Codex")?;
 
@@ -57,15 +77,27 @@ pub(crate) fn open_codex_terminal_inner() -> Result<()> {
 }
 
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-pub(crate) fn open_codex_terminal_inner() -> Result<()> {
-    let candidates = ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal"];
-    for terminal in candidates {
-        if Command::new(terminal).arg("-e").arg("codex").spawn().is_ok() {
+pub(crate) fn open_codex_command_in_terminal(args: &[&str]) -> Result<()> {
+    let candidates: [(&str, &[&str]); 7] = [
+        ("x-terminal-emulator", &["-e"]),
+        ("gnome-terminal", &["--"]),
+        ("kgx", &["--"]),
+        ("konsole", &["-e"]),
+        ("xfce4-terminal", &["-e"]),
+        ("mate-terminal", &["-e"]),
+        ("lxterminal", &["-e"]),
+    ];
+
+    for (terminal, terminal_args) in candidates {
+        let mut command = Command::new(terminal);
+        command.args(terminal_args).arg("codex").args(args);
+        if command.spawn().is_ok() {
             return Ok(());
         }
     }
 
     Command::new("codex")
+        .args(args)
         .spawn()
         .context("无法打开终端启动 Codex，请确认 codex 命令可用")?;
 
@@ -77,16 +109,16 @@ pub(crate) fn restart_codex_app_inner() -> Result<()> {
     let _ = Command::new("/usr/bin/pkill").args(["-x", "Codex"]).status();
     thread::sleep(Duration::from_millis(800));
 
-    let status = Command::new("/usr/bin/open")
+    let app_status = Command::new("/usr/bin/open")
         .args(["-a", "Codex"])
-        .status()
-        .context("无法重新打开 Codex App")?;
+        .status();
 
-    if !status.success() {
-        bail!("无法重新打开 Codex App，请确认已安装名为 Codex 的应用");
+    if matches!(app_status, Ok(status) if status.success()) {
+        return Ok(());
     }
 
-    Ok(())
+    open_codex_command_in_terminal(&[])
+        .context("无法重新打开 Codex App，也无法在终端启动 Codex")
 }
 
 #[cfg(target_os = "windows")]
@@ -96,16 +128,16 @@ pub(crate) fn restart_codex_app_inner() -> Result<()> {
         .status();
     thread::sleep(Duration::from_millis(800));
 
-    let status = Command::new("cmd")
+    let app_status = Command::new("cmd")
         .args(["/C", "start", "", "Codex"])
-        .status()
-        .context("无法重新打开 Codex App")?;
+        .status();
 
-    if !status.success() {
-        bail!("无法重新打开 Codex App，请确认 Codex 已安装并可从系统启动");
+    if matches!(app_status, Ok(status) if status.success()) {
+        return Ok(());
     }
 
-    Ok(())
+    open_codex_command_in_terminal(&[])
+        .context("无法重新打开 Codex App，也无法在终端启动 Codex")
 }
 
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
@@ -113,9 +145,21 @@ pub(crate) fn restart_codex_app_inner() -> Result<()> {
     let _ = Command::new("pkill").args(["-x", "codex"]).status();
     thread::sleep(Duration::from_millis(800));
 
-    Command::new("codex")
-        .spawn()
-        .context("无法重新打开 Codex App，请确认 codex 命令可用")?;
+    open_codex_command_in_terminal(&[])
+        .context("无法重新打开 Codex App，也无法在终端启动 Codex")?;
 
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r#"'\''"#))
+}
+
+#[cfg(target_os = "macos")]
+fn timestamp_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
 }

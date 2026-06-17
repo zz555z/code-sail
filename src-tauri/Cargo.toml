@@ -1,6 +1,6 @@
 [package]
 name = "codesail"
-version = "0.0.5"
+version = "0.0.6"
 description = "CodeSail desktop manager for Codex provider configuration"
 authors = ["zdd"]
 edition = "2021"

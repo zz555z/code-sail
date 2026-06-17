@@ -4,19 +4,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    env,
     fs::{self, File},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    process::Command,
     sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::tasks::run_background_task;
-
-#[cfg(target_os = "macos")]
-use std::os::unix::fs::PermissionsExt;
+use crate::terminal::open_codex_command_in_terminal;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -270,51 +266,11 @@ fn resume_history_session_inner(session_id: &str) -> Result<()> {
     open_resume_session(session_id)
 }
 
-#[cfg(target_os = "macos")]
 fn open_resume_session(session_id: &str) -> Result<()> {
-    let script_path = env::temp_dir().join(format!("codex-resume-{session_id}.command"));
-    let quoted_session_id = shell_single_quote(session_id);
-    let script = format!(
-        r#"#!/bin/zsh -l
-export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-codex resume {quoted_session_id}
-status=$?
-echo
-if [ $status -ne 0 ]; then
-  echo "codex resume failed with exit code $status"
-fi
-echo "Press any key to close this window..."
-read -k 1
-"#
-    );
-
-    fs::write(&script_path, script)
-        .with_context(|| format!("无法创建恢复脚本: {}", script_path.display()))?;
-    fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
-        .with_context(|| format!("无法设置恢复脚本权限: {}", script_path.display()))?;
-
-    Command::new("/usr/bin/open")
-        .arg(&script_path)
-        .spawn()
-        .with_context(|| format!("无法打开终端恢复会话: {session_id}"))?;
-
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn open_resume_session(session_id: &str) -> Result<()> {
-    Command::new("codex")
-        .arg("resume")
-        .arg(session_id)
-        .spawn()
+    open_codex_command_in_terminal(&["resume", session_id])
         .with_context(|| format!("无法恢复会话: {session_id}"))?;
 
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn shell_single_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn delete_history_session_inner(path: &str) -> Result<DeleteHistoryResponse> {
