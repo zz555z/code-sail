@@ -20,13 +20,17 @@ CodeSail 是一个用于管理 Codex CLI 配置的跨平台桌面应用。它把
 
 ## 截图
 
-截图待补充。
+概览界面
 
-建议放置到 `docs/images/` 后在这里引用，例如：
+![CodeSail 概览界面](docs/images/gailan.png)
 
-```md
-![CodeSail overview](docs/images/overview.png)
-```
+模型配置界面
+
+![CodeSail 模型配置界面](docs/images/moxingpeizhi.png)
+
+历史记录界面
+
+![CodeSail 历史记录界面](docs/images/lishijilu.png)
 
 ## 技术栈
 

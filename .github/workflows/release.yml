@@ -38,7 +38,7 @@ jobs:
           - name: Windows
             platform: windows-latest
             rustTarget: ""
-            tauriArgs: ""
+            tauriArgs: --bundles nsis
 
     steps:
       - name: Checkout

@@ -8,7 +8,21 @@ use std::os::unix::fs::PermissionsExt;
 pub(crate) fn open_codex_terminal_inner() -> Result<()> {
     let script_path = env::temp_dir().join("codex-open-terminal.command");
     let script = r#"#!/bin/zsh -l
-export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+if [ -f "$HOME/.zprofile" ]; then
+  . "$HOME/.zprofile" >/dev/null 2>&1 || true
+fi
+
+if [ -f "$HOME/.zshrc" ]; then
+  . "$HOME/.zshrc" >/dev/null 2>&1 || true
+fi
+
+if ! command -v codex >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
+  . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1 || true
+  nvm use --silent default >/dev/null 2>&1 || true
+fi
+
 codex
 status=$?
 echo

@@ -165,12 +165,40 @@ fn node_install_url() -> &'static str {
 fn version_command_output(command: &str, args: &[&str]) -> std::io::Result<Output> {
     let command_line = std::iter::once(command)
         .chain(args.iter().copied())
+        .map(shell_single_quote)
         .collect::<Vec<_>>()
         .join(" ");
+    let script = format!(
+        r#"
+export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+if [ -f "$HOME/.zprofile" ]; then
+  . "$HOME/.zprofile" >/dev/null 2>&1 || true
+fi
+
+if [ -f "$HOME/.zshrc" ]; then
+  . "$HOME/.zshrc" >/dev/null 2>&1 || true
+fi
+
+if ! command -v {command} >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
+  . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1 || true
+  nvm use --silent default >/dev/null 2>&1 || true
+fi
+
+{command_line}
+"#,
+        command = shell_single_quote(command),
+        command_line = command_line
+    );
 
     Command::new("/bin/zsh")
-        .args(["-lc", &command_line])
+        .args(["-lc", &script])
         .output()
+}
+
+#[cfg(target_os = "macos")]
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r#"'\''"#))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
