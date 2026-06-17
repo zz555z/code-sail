@@ -115,6 +115,18 @@ npm run tauri:build
 
 构建产物会由 Tauri 输出到 `src-tauri/target/release/bundle/`。
 
+## 安装说明
+
+当前 GitHub Releases 里的 macOS 安装包尚未接入 Apple Developer 签名和公证。首次从 GitHub 下载并安装后，如果系统提示“CodeSail 已损坏，无法打开”，通常是 Gatekeeper 拦截了未签名应用，不代表安装包真的损坏。
+
+把 App 拖到“应用程序”后，可以在终端执行：
+
+```bash
+xattr -cr /Applications/CodeSail.app
+```
+
+然后再打开 CodeSail。后续接入 Apple Developer 证书、签名和 notarization 后，就不需要这一步。
+
 ## 项目结构
 
 ```text

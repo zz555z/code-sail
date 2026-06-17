@@ -83,7 +83,16 @@ jobs:
         with:
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: "CodeSail ${{ inputs.tag || github.ref_name }}"
-          releaseBody: "CodeSail desktop release. These packages are unsigned unless signing secrets are configured."
+          releaseBody: |
+            CodeSail desktop release.
+
+            macOS packages are currently unsigned and not notarized. If macOS reports that CodeSail is damaged and cannot be opened, remove the quarantine attribute after installing:
+
+            ```bash
+            xattr -cr /Applications/CodeSail.app
+            ```
+
+            A fully trusted macOS installer requires Apple Developer signing and notarization secrets in the release workflow.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.tauriArgs }}
