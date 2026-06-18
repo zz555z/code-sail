@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   deleteHistoryProvider,
   deleteHistorySession,
@@ -7,13 +7,14 @@ import {
   resumeHistorySession
 } from "../lib/api";
 import { formatDeleteHistoryFailure } from "../lib/format";
-import type { HistoryConversation, HistoryProviderGroup, HistorySessionSummary } from "../lib/types";
+import type { HistoryConversation, HistoryProviderGroup, HistorySessionSummary, ToolType } from "../lib/types";
 
 type UseHistorySessionsOptions = {
+  activeTool: ToolType;
   setMessage: (message: string) => void;
 };
 
-export function useHistorySessions({ setMessage }: UseHistorySessionsOptions) {
+export function useHistorySessions({ activeTool, setMessage }: UseHistorySessionsOptions) {
   const [historyGroups, setHistoryGroups] = useState<HistoryProviderGroup[]>([]);
   const [historyConversation, setHistoryConversation] = useState<HistoryConversation | null>(null);
   const [selectedHistoryPath, setSelectedHistoryPath] = useState<string | null>(null);
@@ -54,11 +55,18 @@ export function useHistorySessions({ setMessage }: UseHistorySessionsOptions) {
     [allHistorySessions, selectedHistoryPath]
   );
 
+  useEffect(() => {
+    setHistoryGroups([]);
+    setHistoryConversation(null);
+    setSelectedHistoryPath(null);
+    setExpandedHistoryProviders({});
+  }, [activeTool]);
+
   async function refreshHistory(options?: { preferredPath?: string | null }) {
     setHistoryLoading(true);
     setMessage("");
     try {
-      const groups = await listHistorySessions();
+      const groups = await listHistorySessions(activeTool);
       const sessions = groups.flatMap((group) => group.sessions);
       const hasPreferredPath = Object.prototype.hasOwnProperty.call(options || {}, "preferredPath");
       const desiredPath = hasPreferredPath ? options?.preferredPath ?? null : selectedHistoryPath;
@@ -76,7 +84,7 @@ export function useHistorySessions({ setMessage }: UseHistorySessionsOptions) {
         return next;
       });
       setSelectedHistoryPath(nextSelectedPath);
-      setHistoryConversation(nextSelectedPath ? await readHistorySession(nextSelectedPath) : null);
+      setHistoryConversation(nextSelectedPath ? await readHistorySession(nextSelectedPath, activeTool) : null);
     } catch (error) {
       setHistoryConversation(null);
       setMessage(error instanceof Error ? error.message : String(error));
@@ -90,7 +98,7 @@ export function useHistorySessions({ setMessage }: UseHistorySessionsOptions) {
     setHistoryLoading(true);
     setMessage("");
     try {
-      setHistoryConversation(await readHistorySession(session.path));
+      setHistoryConversation(await readHistorySession(session.path, activeTool));
     } catch (error) {
       setHistoryConversation(null);
       setMessage(error instanceof Error ? error.message : String(error));
@@ -111,7 +119,7 @@ export function useHistorySessions({ setMessage }: UseHistorySessionsOptions) {
     setHistoryBusy(true);
     setMessage("");
     try {
-      await resumeHistorySession(session.sessionId);
+      await resumeHistorySession(session.sessionId, activeTool);
       setMessage(`已打开终端恢复会话 ${session.sessionId}。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -125,7 +133,7 @@ export function useHistorySessions({ setMessage }: UseHistorySessionsOptions) {
     setHistoryBusy(true);
     setMessage("");
     try {
-      const result = await deleteHistorySession(session.path);
+      const result = await deleteHistorySession(session.path, activeTool);
       await refreshHistory({ preferredPath: null });
       setMessage(result.failureCount ? formatDeleteHistoryFailure(result) : `已删除会话 ${session.sessionId}。`);
     } catch (error) {
@@ -139,7 +147,7 @@ export function useHistorySessions({ setMessage }: UseHistorySessionsOptions) {
     setHistoryBusy(true);
     setMessage("");
     try {
-      const result = await deleteHistoryProvider(group.provider);
+      const result = await deleteHistoryProvider(group.provider, activeTool);
       await refreshHistory({ preferredPath: null });
       setMessage(
         result.failureCount

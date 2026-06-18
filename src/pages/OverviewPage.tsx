@@ -8,6 +8,7 @@ import {
   Terminal
 } from "lucide-react";
 import { NotificationToast } from "../components/NotificationToast";
+import { useActiveToolContext } from "../contexts/ActiveToolContext";
 import { useAppServicesContext } from "../contexts/AppServicesContext";
 import { useHistoryContext } from "../contexts/HistoryContext";
 import { useMessage } from "../contexts/MessageContext";
@@ -56,6 +57,7 @@ type OverviewPageProps = {
 
 export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProps) {
   const { message, messageClassName } = useMessage();
+  const { activeTool } = useActiveToolContext();
   const { state, activeProvider, busy, refresh } = useProviderEditorContext();
   const {
     appVersion,
@@ -83,6 +85,7 @@ export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProp
   } = useHistoryContext();
 
   const latestVersionLabel = appUpdate?.latestVersion ? `v${appUpdate.latestVersion}` : null;
+  const activeToolName = activeTool === "claude" ? "Claude" : "Codex";
 
   return (
     <section className="overview-board">
@@ -218,7 +221,7 @@ export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProp
           <div className="overview-section-head">
             <div>
               <h4>历史记录摘要</h4>
-              <p>{historyLoading ? "正在扫描会话" : `${historyProviderStats.length} 个 provider 有历史记录`}</p>
+              <p>{historyLoading ? "正在扫描会话" : `${activeToolName} · ${historyProviderStats.length} 个分组有历史记录`}</p>
             </div>
             <Clock3 size={18} />
           </div>

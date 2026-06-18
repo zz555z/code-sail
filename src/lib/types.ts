@@ -88,6 +88,7 @@ export type HistoryMessage = {
 export type HistorySessionSummary = {
   sessionId: string;
   provider: string;
+  toolType: ToolType;
   title: string;
   timestamp: number | null;
   path: string;
@@ -96,12 +97,14 @@ export type HistorySessionSummary = {
 
 export type HistoryProviderGroup = {
   provider: string;
+  toolType: ToolType;
   sessions: HistorySessionSummary[];
 };
 
 export type HistoryConversation = {
   sessionId: string;
   provider: string;
+  toolType: ToolType;
   title: string;
   timestamp: number | null;
   path: string;

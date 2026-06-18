@@ -35,7 +35,7 @@ export function App() {
   const activeToolHook = useActiveTool();
   const providerEditor = useProviderEditor({ setMessage, setMessagePaused });
   const toolStatuses = useToolStatuses({ setMessage });
-  const historySessions = useHistorySessions({ setMessage });
+  const historySessions = useHistorySessions({ activeTool: activeToolHook.activeTool, setMessage });
   const appUpdate = useAppUpdate({ appVersion, setMessage });
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function App() {
       void historySessions.refreshHistory();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePage]);
+  }, [activePage, activeToolHook.activeTool]);
 
   const messageValue = useMemo(
     () => ({ message, messageClassName, setMessage, setMessagePaused }),

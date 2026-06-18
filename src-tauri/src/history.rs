@@ -12,12 +12,14 @@ use std::{
 };
 
 use crate::tasks::run_background_task;
-use crate::terminal::open_codex_command_in_terminal;
+use crate::terminal::{open_claude_command_in_terminal, open_codex_command_in_terminal};
+use crate::storage::ToolType;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryProviderGroup {
     provider: String,
+    tool_type: ToolType,
     sessions: Vec<HistorySessionSummary>,
 }
 
@@ -26,6 +28,7 @@ pub struct HistoryProviderGroup {
 pub struct HistorySessionSummary {
     session_id: String,
     provider: String,
+    tool_type: ToolType,
     title: String,
     timestamp: Option<i64>,
     path: String,
@@ -37,6 +40,7 @@ pub struct HistorySessionSummary {
 pub struct HistoryConversation {
     session_id: String,
     provider: String,
+    tool_type: ToolType,
     title: String,
     timestamp: Option<i64>,
     path: String,
@@ -62,24 +66,28 @@ pub struct DeleteHistoryResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ReadHistorySessionRequest {
     path: String,
+    tool_type: ToolType,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResumeHistorySessionRequest {
     session_id: String,
+    tool_type: ToolType,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteHistorySessionRequest {
     path: String,
+    tool_type: ToolType,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteHistoryProviderRequest {
     provider: String,
+    tool_type: ToolType,
 }
 
 #[derive(Clone)]
@@ -95,9 +103,18 @@ const MAX_SESSIONS: usize = 200;
 
 #[tauri::command]
 pub async fn list_history_sessions() -> Result<Vec<HistoryProviderGroup>, String> {
-    run_background_task("codex-list-history-sessions", list_history_sessions_inner)
+    run_background_task("codex-list-history-sessions", || list_history_sessions_inner(ToolType::Codex))
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn list_tool_history_sessions(tool_type: ToolType) -> Result<Vec<HistoryProviderGroup>, String> {
+    run_background_task("codex-list-tool-history-sessions", move || {
+        list_history_sessions_inner(tool_type)
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -105,7 +122,7 @@ pub async fn read_history_session(
     input: ReadHistorySessionRequest,
 ) -> Result<HistoryConversation, String> {
     run_background_task("codex-read-history-session", move || {
-        read_history_session_inner(&input.path)
+        read_history_session_inner(&input.path, input.tool_type)
     })
     .await
     .map_err(|error| error.to_string())
@@ -114,7 +131,7 @@ pub async fn read_history_session(
 #[tauri::command]
 pub async fn resume_history_session(input: ResumeHistorySessionRequest) -> Result<(), String> {
     run_background_task("codex-resume-history-session", move || {
-        resume_history_session_inner(&input.session_id)
+        resume_history_session_inner(&input.session_id, input.tool_type)
     })
     .await
     .map_err(|error| error.to_string())
@@ -125,7 +142,7 @@ pub async fn delete_history_session(
     input: DeleteHistorySessionRequest,
 ) -> Result<DeleteHistoryResponse, String> {
     run_background_task("codex-delete-history-session", move || {
-        delete_history_session_inner(&input.path)
+        delete_history_session_inner(&input.path, input.tool_type)
     })
     .await
     .map_err(|error| error.to_string())
@@ -136,14 +153,14 @@ pub async fn delete_history_provider(
     input: DeleteHistoryProviderRequest,
 ) -> Result<DeleteHistoryResponse, String> {
     run_background_task("codex-delete-history-provider", move || {
-        delete_history_provider_inner(&input.provider)
+        delete_history_provider_inner(&input.provider, input.tool_type)
     })
     .await
     .map_err(|error| error.to_string())
 }
 
-fn list_history_sessions_inner() -> Result<Vec<HistoryProviderGroup>> {
-    let root = sessions_root()?;
+fn list_history_sessions_inner(tool_type: ToolType) -> Result<Vec<HistoryProviderGroup>> {
+    let root = sessions_root(tool_type)?;
     if !root.exists() {
         return Ok(Vec::new());
     }
@@ -160,7 +177,7 @@ fn list_history_sessions_inner() -> Result<Vec<HistoryProviderGroup>> {
 
     let mut all_sessions = Vec::<HistorySessionSummary>::new();
     for session_file in &session_files {
-        if let Some(summary) = summarize_session_file_cached(session_file)? {
+        if let Some(summary) = summarize_session_file_cached(session_file, tool_type)? {
             all_sessions.push(summary);
             if all_sessions.len() >= MAX_SESSIONS {
                 break;
@@ -186,7 +203,11 @@ fn list_history_sessions_inner() -> Result<Vec<HistoryProviderGroup>> {
 
     let mut grouped = groups
         .into_iter()
-        .map(|(provider, sessions)| HistoryProviderGroup { provider, sessions })
+        .map(|(provider, sessions)| HistoryProviderGroup {
+            provider,
+            tool_type,
+            sessions,
+        })
         .collect::<Vec<_>>();
 
     grouped.sort_by(|left, right| left.provider.to_lowercase().cmp(&right.provider.to_lowercase()));
@@ -203,7 +224,10 @@ fn prune_summary_cache(session_files: &[PathBuf]) {
     }
 }
 
-fn summarize_session_file_cached(session_file: &Path) -> Result<Option<HistorySessionSummary>> {
+fn summarize_session_file_cached(
+    session_file: &Path,
+    tool_type: ToolType,
+) -> Result<Option<HistorySessionSummary>> {
     let metadata = fs::metadata(session_file)
         .with_context(|| format!("无法读取会话文件信息: {}", session_file.display()))?;
     let len = metadata.len();
@@ -220,7 +244,7 @@ fn summarize_session_file_cached(session_file: &Path) -> Result<Option<HistorySe
         return Ok(cached.summary);
     }
 
-    let summary = summarize_session_file(session_file)?;
+    let summary = summarize_session_file(session_file, tool_type)?;
     if let Ok(mut items) = cache.lock() {
         items.insert(
             cache_key,
@@ -248,25 +272,27 @@ fn file_modified_millis(path: &Path) -> u128 {
         .unwrap_or_default()
 }
 
-fn read_history_session_inner(path: &str) -> Result<HistoryConversation> {
-    let session_file = validated_session_file(path)?;
+fn read_history_session_inner(path: &str, tool_type: ToolType) -> Result<HistoryConversation> {
+    let session_file = validated_session_file(path, tool_type)?;
 
-    let summary = summarize_session_file_cached(&session_file)?.unwrap_or_else(|| {
+    let summary = summarize_session_file_cached(&session_file, tool_type)?.unwrap_or_else(|| {
         let session_id = session_id_from_file(&session_file);
         HistorySessionSummary {
             session_id,
             provider: "unknown".to_string(),
+            tool_type,
             title: "未命名会话".to_string(),
             timestamp: None,
             path: session_file.display().to_string(),
             message_count: 0,
         }
     });
-    let messages = read_history_messages(&session_file)?;
+    let messages = read_history_messages(&session_file, tool_type)?;
 
     Ok(HistoryConversation {
         session_id: summary.session_id,
         provider: summary.provider,
+        tool_type: summary.tool_type,
         title: summary.title,
         timestamp: summary.timestamp,
         path: summary.path,
@@ -274,7 +300,7 @@ fn read_history_session_inner(path: &str) -> Result<HistoryConversation> {
     })
 }
 
-fn resume_history_session_inner(session_id: &str) -> Result<()> {
+fn resume_history_session_inner(session_id: &str, tool_type: ToolType) -> Result<()> {
     let session_id = session_id.trim();
     if session_id.is_empty() {
         bail!("Session ID 不能为空");
@@ -286,18 +312,22 @@ fn resume_history_session_inner(session_id: &str) -> Result<()> {
         bail!("Session ID 格式不合法");
     }
 
-    open_resume_session(session_id)
+    open_resume_session(session_id, tool_type)
 }
 
-fn open_resume_session(session_id: &str) -> Result<()> {
-    open_codex_command_in_terminal(&["resume", session_id])
-        .with_context(|| format!("无法恢复会话: {session_id}"))?;
+fn open_resume_session(session_id: &str, tool_type: ToolType) -> Result<()> {
+    match tool_type {
+        ToolType::Codex => open_codex_command_in_terminal(&["resume", session_id])
+            .with_context(|| format!("无法恢复 Codex 会话: {session_id}"))?,
+        ToolType::Claude => open_claude_command_in_terminal(&["--resume", session_id])
+            .with_context(|| format!("无法恢复 Claude 会话: {session_id}"))?,
+    }
 
     Ok(())
 }
 
-fn delete_history_session_inner(path: &str) -> Result<DeleteHistoryResponse> {
-    let session_file = validated_session_file(path)?;
+fn delete_history_session_inner(path: &str, tool_type: ToolType) -> Result<DeleteHistoryResponse> {
+    let session_file = validated_session_file(path, tool_type)?;
     match fs::remove_file(&session_file) {
         Ok(()) => Ok(DeleteHistoryResponse {
             success_count: 1,
@@ -312,13 +342,13 @@ fn delete_history_session_inner(path: &str) -> Result<DeleteHistoryResponse> {
     }
 }
 
-fn delete_history_provider_inner(provider: &str) -> Result<DeleteHistoryResponse> {
+fn delete_history_provider_inner(provider: &str, tool_type: ToolType) -> Result<DeleteHistoryResponse> {
     let provider = provider.trim();
     if provider.is_empty() {
         bail!("Provider 不能为空");
     }
 
-    let groups = list_history_sessions_inner()?;
+    let groups = list_history_sessions_inner(tool_type)?;
     let Some(group) = groups.into_iter().find(|group| group.provider == provider) else {
         return Ok(DeleteHistoryResponse {
             success_count: 0,
@@ -334,7 +364,7 @@ fn delete_history_provider_inner(provider: &str) -> Result<DeleteHistoryResponse
     };
 
     for session in group.sessions {
-        let session_file = validated_session_file(&session.path)?;
+        let session_file = validated_session_file(&session.path, tool_type)?;
         match fs::remove_file(&session_file) {
             Ok(()) => response.success_count += 1,
             Err(error) => {
@@ -349,9 +379,12 @@ fn delete_history_provider_inner(provider: &str) -> Result<DeleteHistoryResponse
     Ok(response)
 }
 
-fn sessions_root() -> Result<PathBuf> {
+fn sessions_root(tool_type: ToolType) -> Result<PathBuf> {
     let home = dirs::home_dir().context("failed to locate the home directory")?;
-    Ok(home.join(".codex").join("sessions"))
+    Ok(match tool_type {
+        ToolType::Codex => home.join(".codex").join("sessions"),
+        ToolType::Claude => home.join(".claude").join("projects"),
+    })
 }
 
 fn collect_session_files(dir: &Path, session_files: &mut Vec<PathBuf>) -> Result<()> {
@@ -371,7 +404,10 @@ fn collect_session_files(dir: &Path, session_files: &mut Vec<PathBuf>) -> Result
     Ok(())
 }
 
-fn summarize_session_file(session_file: &Path) -> Result<Option<HistorySessionSummary>> {
+fn summarize_session_file(
+    session_file: &Path,
+    tool_type: ToolType,
+) -> Result<Option<HistorySessionSummary>> {
     let file = File::open(session_file)
         .with_context(|| format!("无法读取会话文件: {}", session_file.display()))?;
     let reader = BufReader::new(file);
@@ -393,27 +429,49 @@ fn summarize_session_file(session_file: &Path) -> Result<Option<HistorySessionSu
             continue;
         };
 
-        if string_field(&value, "type").as_deref() == Some("session_meta") {
-            let payload = value.get("payload").unwrap_or(&Value::Null);
-            if is_internal_subagent_session(payload) {
-                return Ok(None);
-            }
-            if provider.is_none() {
-                provider = string_field(payload, "model_provider").filter(|item| !item.trim().is_empty());
-            }
-            if timestamp.is_none() {
-                timestamp = timestamp_field(payload, "timestamp").or_else(|| timestamp_field(&value, "timestamp"));
-            }
-            if let Some(id) = string_field(payload, "id") {
-                if !id.trim().is_empty() {
-                    session_id = id;
+        match tool_type {
+            ToolType::Codex => {
+                if string_field(&value, "type").as_deref() == Some("session_meta") {
+                    let payload = value.get("payload").unwrap_or(&Value::Null);
+                    if is_internal_subagent_session(payload) {
+                        return Ok(None);
+                    }
+                    if provider.is_none() {
+                        provider = string_field(payload, "model_provider")
+                            .filter(|item| !item.trim().is_empty());
+                    }
+                    if timestamp.is_none() {
+                        timestamp = timestamp_field(payload, "timestamp")
+                            .or_else(|| timestamp_field(&value, "timestamp"));
+                    }
+                    if let Some(id) = string_field(payload, "id") {
+                        if !id.trim().is_empty() {
+                            session_id = id;
+                        }
+                    }
+                } else if timestamp.is_none() {
+                    timestamp = timestamp_field(&value, "timestamp");
                 }
             }
-        } else if timestamp.is_none() {
-            timestamp = timestamp_field(&value, "timestamp");
+            ToolType::Claude => {
+                if value.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+                    continue;
+                }
+                if provider.is_none() {
+                    provider = claude_provider_label_from_value(&value);
+                }
+                if timestamp.is_none() {
+                    timestamp = timestamp_field(&value, "timestamp");
+                }
+                if let Some(id) = string_field(&value, "sessionId") {
+                    if !id.trim().is_empty() {
+                        session_id = id;
+                    }
+                }
+            }
         }
 
-        let messages = messages_from_value(&value);
+        let messages = messages_from_value(&value, tool_type);
         message_count += messages.len();
         if title.is_none() {
             title = messages
@@ -423,6 +481,10 @@ fn summarize_session_file(session_file: &Path) -> Result<Option<HistorySessionSu
         }
     }
 
+    let provider = match tool_type {
+        ToolType::Codex => provider,
+        ToolType::Claude => provider.or_else(|| claude_provider_label_from_path(session_file)),
+    };
     let Some(provider) = provider else {
         return Ok(None);
     };
@@ -430,6 +492,7 @@ fn summarize_session_file(session_file: &Path) -> Result<Option<HistorySessionSu
     Ok(Some(HistorySessionSummary {
         session_id,
         provider,
+        tool_type,
         title: title.unwrap_or_else(|| "未命名会话".to_string()),
         timestamp,
         path: session_file.display().to_string(),
@@ -442,7 +505,28 @@ fn is_internal_subagent_session(payload: &Value) -> bool {
         || payload.get("source").and_then(|source| source.get("subagent")).is_some()
 }
 
-fn read_history_messages(session_file: &Path) -> Result<Vec<HistoryMessage>> {
+fn claude_provider_label_from_value(value: &Value) -> Option<String> {
+    string_field(value, "cwd")
+        .and_then(|cwd| {
+            Path::new(&cwd)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(ToString::to_string)
+        })
+        .filter(|name| !name.trim().is_empty())
+}
+
+fn claude_provider_label_from_path(session_file: &Path) -> Option<String> {
+    session_file
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .map(|name| name.trim_matches('-').replace('-', "/"))
+        .filter(|name| !name.trim().is_empty())
+        .or_else(|| Some("claude".to_string()))
+}
+
+fn read_history_messages(session_file: &Path, tool_type: ToolType) -> Result<Vec<HistoryMessage>> {
     let file = File::open(session_file)
         .with_context(|| format!("无法读取会话文件: {}", session_file.display()))?;
     let reader = BufReader::new(file);
@@ -458,13 +542,25 @@ fn read_history_messages(session_file: &Path) -> Result<Vec<HistoryMessage>> {
         let Ok(value) = serde_json::from_str::<Value>(line) else {
             continue;
         };
-        messages.extend(messages_from_value(&value));
+        if tool_type == ToolType::Claude
+            && value.get("isSidechain").and_then(Value::as_bool) == Some(true)
+        {
+            continue;
+        }
+        messages.extend(messages_from_value(&value, tool_type));
     }
 
     Ok(messages)
 }
 
-fn messages_from_value(value: &Value) -> Vec<HistoryMessage> {
+fn messages_from_value(value: &Value, tool_type: ToolType) -> Vec<HistoryMessage> {
+    match tool_type {
+        ToolType::Codex => codex_messages_from_value(value),
+        ToolType::Claude => claude_messages_from_value(value),
+    }
+}
+
+fn codex_messages_from_value(value: &Value) -> Vec<HistoryMessage> {
     let top_type = string_field(value, "type").unwrap_or_default();
     let payload = value.get("payload").unwrap_or(&Value::Null);
     let payload_type = string_field(payload, "type").unwrap_or_default();
@@ -498,6 +594,30 @@ fn messages_from_value(value: &Value) -> Vec<HistoryMessage> {
     Vec::new()
 }
 
+fn claude_messages_from_value(value: &Value) -> Vec<HistoryMessage> {
+    let top_type = string_field(value, "type").unwrap_or_default();
+    if top_type != "user" && top_type != "assistant" {
+        return Vec::new();
+    }
+
+    let message = value.get("message").unwrap_or(value);
+    let role = string_field(message, "role").unwrap_or(top_type);
+    if role != "user" && role != "assistant" {
+        return Vec::new();
+    }
+
+    let content = message
+        .get("content")
+        .map(content_to_string)
+        .or_else(|| string_field(value, "content"))
+        .unwrap_or_default();
+    if content.trim().is_empty() {
+        return Vec::new();
+    }
+
+    vec![HistoryMessage { role, content }]
+}
+
 fn content_to_string(value: &Value) -> String {
     match value {
         Value::String(text) => text.clone(),
@@ -507,11 +627,20 @@ fn content_to_string(value: &Value) -> String {
             .filter(|item| !item.trim().is_empty())
             .collect::<Vec<_>>()
             .join("\n"),
-        Value::Object(map) => ["text", "content", "value"]
-            .iter()
-            .find_map(|key| map.get(*key).map(content_to_string))
-            .filter(|text| !text.trim().is_empty())
-            .unwrap_or_else(|| serde_json::to_string(value).unwrap_or_default()),
+        Value::Object(map) => {
+            let content_type = map.get("type").and_then(Value::as_str).unwrap_or_default();
+            ["text", "content", "value"]
+                .iter()
+                .find_map(|key| map.get(*key).map(content_to_string))
+                .filter(|text| !text.trim().is_empty())
+                .unwrap_or_else(|| {
+                    if content_type.is_empty() {
+                        serde_json::to_string(value).unwrap_or_default()
+                    } else {
+                        String::new()
+                    }
+                })
+        }
         Value::Null => String::new(),
         _ => value.to_string(),
     }
@@ -578,17 +707,18 @@ fn is_uuid_like(value: &str) -> bool {
     })
 }
 
-fn validated_session_file(path: &str) -> Result<PathBuf> {
+fn validated_session_file(path: &str, tool_type: ToolType) -> Result<PathBuf> {
     let path = path.trim();
     if path.is_empty() {
         bail!("会话路径不能为空");
     }
 
-    let root = fs::canonicalize(sessions_root()?).context("未找到 ~/.codex/sessions")?;
+    let root = fs::canonicalize(sessions_root(tool_type)?)
+        .with_context(|| format!("未找到 {} 历史目录", tool_type))?;
     let input = fs::canonicalize(PathBuf::from(path))
         .with_context(|| format!("会话路径不存在: {path}"))?;
     if !input.starts_with(&root) {
-        bail!("会话路径不在 ~/.codex/sessions 下");
+        bail!("会话路径不在 {} 历史目录下", tool_type);
     }
     if !input.is_file() {
         bail!("会话路径不是文件: {}", input.display());
@@ -627,13 +757,14 @@ mod tests {
 "#,
         )?;
 
-        let summary = summarize_session_file(&path)?.expect("summary");
+        let summary = summarize_session_file(&path, ToolType::Codex)?.expect("summary");
         assert_eq!(summary.session_id, "session-1");
         assert_eq!(summary.provider, "openai");
+        assert_eq!(summary.tool_type, ToolType::Codex);
         assert_eq!(summary.title, "Hello from history");
         assert_eq!(summary.message_count, 2);
 
-        let messages = read_history_messages(&path)?;
+        let messages = read_history_messages(&path, ToolType::Codex)?;
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[1].content, "Hi there");
@@ -651,7 +782,36 @@ mod tests {
 "#,
         )?;
 
-        assert!(summarize_session_file(&path)?.is_none());
+        assert!(summarize_session_file(&path, ToolType::Codex)?.is_none());
+
+        let _ = fs::remove_file(path);
+        Ok(())
+    }
+
+    #[test]
+    fn summarizes_claude_history_jsonl_sessions() -> Result<()> {
+        let path = temp_session_file("claude-summary");
+        fs::write(
+            &path,
+            r#"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-06-18T08:38:30.914Z","sessionId":"claude-session-1","content":"ignored"}
+{"type":"user","message":{"role":"user","content":"Hello Claude history"},"timestamp":"2026-06-18T08:41:42.237Z","cwd":"/tmp/example-project","sessionId":"claude-session-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"Hello from Claude"}]},"timestamp":"2026-06-18T08:41:56.034Z","cwd":"/tmp/example-project","sessionId":"claude-session-1"}
+{"type":"system","subtype":"turn_duration","timestamp":"2026-06-18T08:41:57.034Z","sessionId":"claude-session-1"}
+"#,
+        )?;
+
+        let summary = summarize_session_file(&path, ToolType::Claude)?.expect("summary");
+        assert_eq!(summary.session_id, "claude-session-1");
+        assert_eq!(summary.provider, "example-project");
+        assert_eq!(summary.tool_type, ToolType::Claude);
+        assert_eq!(summary.title, "Hello Claude history");
+        assert_eq!(summary.message_count, 2);
+
+        let messages = read_history_messages(&path, ToolType::Claude)?;
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[1].role, "assistant");
+        assert_eq!(messages[1].content, "Hello from Claude");
 
         let _ = fs::remove_file(path);
         Ok(())

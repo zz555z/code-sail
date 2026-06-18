@@ -124,31 +124,31 @@ export async function openToolInstall(command: string): Promise<void> {
   });
 }
 
-export async function listHistorySessions(): Promise<HistoryProviderGroup[]> {
-  return await invokeCommand<HistoryProviderGroup[]>("list_history_sessions");
+export async function listHistorySessions(toolType: ToolType): Promise<HistoryProviderGroup[]> {
+  return await invokeCommand<HistoryProviderGroup[]>("list_tool_history_sessions", { toolType });
 }
 
-export async function readHistorySession(path: string): Promise<HistoryConversation> {
+export async function readHistorySession(path: string, toolType: ToolType): Promise<HistoryConversation> {
   return await invokeCommand<HistoryConversation>("read_history_session", {
-    input: { path }
+    input: { path, toolType }
   });
 }
 
-export async function resumeHistorySession(sessionId: string): Promise<void> {
+export async function resumeHistorySession(sessionId: string, toolType: ToolType): Promise<void> {
   await invokeCommand<void>("resume_history_session", {
-    input: { sessionId }
+    input: { sessionId, toolType }
   });
 }
 
-export async function deleteHistorySession(path: string): Promise<DeleteHistoryResponse> {
+export async function deleteHistorySession(path: string, toolType: ToolType): Promise<DeleteHistoryResponse> {
   return await invokeCommand<DeleteHistoryResponse>("delete_history_session", {
-    input: { path }
+    input: { path, toolType }
   });
 }
 
-export async function deleteHistoryProvider(provider: string): Promise<DeleteHistoryResponse> {
+export async function deleteHistoryProvider(provider: string, toolType: ToolType): Promise<DeleteHistoryResponse> {
   return await invokeCommand<DeleteHistoryResponse>("delete_history_provider", {
-    input: { provider }
+    input: { provider, toolType }
   });
 }
 

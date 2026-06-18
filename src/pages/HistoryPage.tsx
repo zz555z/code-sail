@@ -9,12 +9,14 @@ import {
   Trash2
 } from "lucide-react";
 import { NotificationToast } from "../components/NotificationToast";
+import { useActiveToolContext } from "../contexts/ActiveToolContext";
 import { useHistoryContext } from "../contexts/HistoryContext";
 import { useMessage } from "../contexts/MessageContext";
 import { formatHistoryTime, roleClass, roleLabel } from "../lib/format";
 
 export function HistoryPage() {
   const { message, messageClassName } = useMessage();
+  const { activeTool } = useActiveToolContext();
   const {
     historySessionCount,
     historyGroups,
@@ -31,6 +33,8 @@ export function HistoryPage() {
     removeHistorySession,
     removeHistoryProvider
   } = useHistoryContext();
+  const activeToolName = activeTool === "claude" ? "Claude" : "Codex";
+  const historyRootLabel = activeTool === "claude" ? "~/.claude/projects" : "~/.codex/sessions";
 
   return (
     <section className="history-board">
@@ -39,7 +43,7 @@ export function HistoryPage() {
           <History size={18} />
           <div>
             <h3>历史记录</h3>
-            <p>共 {historySessionCount} 条会话</p>
+            <p>{activeToolName} · 共 {historySessionCount} 条会话</p>
           </div>
         </div>
 
@@ -122,7 +126,7 @@ export function HistoryPage() {
             <div className="history-empty-state">
               <History size={24} />
               <strong>{historyLoading ? "正在扫描历史记录" : "还没有历史记录"}</strong>
-              <span>~/.codex/sessions</span>
+              <span>{historyRootLabel}</span>
             </div>
           )}
         </aside>
