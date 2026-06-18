@@ -32,6 +32,7 @@ struct ToolInstallInfo {
 pub(crate) fn load_tool_statuses() -> Result<Vec<ToolStatus>> {
     Ok(vec![
         load_tool_status("Codex", "codex", &["--version"]),
+        load_tool_status("Claude Code", "claude", &["--version"]),
         load_tool_status("Node.js", "node", &["--version"]),
         load_tool_status("npm", "npm", &["--version"]),
     ])
@@ -89,6 +90,11 @@ fn tool_install_info(command: &str) -> ToolInstallInfo {
             label: "安装",
             hint: codex_install_hint(),
             url: "https://developers.openai.com/codex/",
+        },
+        "claude" => ToolInstallInfo {
+            label: "安装",
+            hint: "打开 Claude Code 安装说明",
+            url: "https://docs.anthropic.com/en/docs/claude-code/overview",
         },
         "node" => ToolInstallInfo {
             label: "下载",
@@ -220,7 +226,7 @@ fn version_command_output(command: &str, args: &[&str]) -> std::io::Result<Outpu
 
 pub(crate) fn open_tool_install_inner(command: &str) -> Result<()> {
     let command = command.trim();
-    if !matches!(command, "codex" | "node" | "npm") {
+    if !matches!(command, "codex" | "claude" | "node" | "npm") {
         bail!("不支持的依赖项: {command}");
     }
 

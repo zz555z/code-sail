@@ -1,11 +1,12 @@
-import type { ProviderDraft, ProviderView } from "./types";
+import type { ProviderDraft, ProviderView, ToolType } from "./types";
 
 export const emptyDraft: ProviderDraft = {
   originalId: null,
   name: "",
   baseUrl: "",
   model: "",
-  token: ""
+  token: "",
+  toolType: "codex"
 };
 
 export function draftFromProvider(provider: ProviderView | null): ProviderDraft {
@@ -15,7 +16,8 @@ export function draftFromProvider(provider: ProviderView | null): ProviderDraft 
     name: provider.name || provider.id,
     baseUrl: provider.baseUrl || "",
     model: provider.model || "",
-    token: provider.token || ""
+    token: provider.token || "",
+    toolType: provider.toolType
   };
 }
 

@@ -149,6 +149,116 @@ input:focus-visible {
   padding: 18px 14px;
 }
 
+.tool-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.tool-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  min-height: 46px;
+  padding: 0 10px;
+  border: 1px solid rgba(166, 213, 194, 0.58);
+  border-radius: 18px;
+  color: var(--leaf);
+  background: var(--mint);
+  font-size: 14px;
+  font-weight: 720;
+  white-space: nowrap;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color 220ms var(--ease-ui),
+    background 220ms var(--ease-ui),
+    box-shadow 240ms var(--ease-ui),
+    color 180ms ease,
+    transform 240ms var(--ease-snap);
+}
+
+.tool-dropdown-trigger:hover:not(:disabled) {
+  border-color: rgba(145, 191, 173, 0.74);
+  background: #f4fbf8;
+  box-shadow: 0 12px 24px rgba(103, 137, 125, 0.12);
+  transform: translate3d(0, -1px, 0);
+}
+
+.tool-dropdown-trigger.open {
+  border-color: rgba(145, 191, 173, 0.74);
+  background: #f4fbf8;
+  box-shadow: 0 12px 24px rgba(103, 137, 125, 0.12);
+}
+
+.tool-dropdown-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 46px;
+  padding: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow);
+  animation: tool-dropdown-in 180ms var(--ease-snap);
+}
+
+.tool-dropdown-item {
+  display: grid;
+  place-items: center;
+  align-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--soft-ink);
+  font-size: 14px;
+  font-weight: 680;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 180ms var(--ease-ui),
+    background 180ms var(--ease-ui),
+    color 160ms ease;
+}
+
+.tool-brand-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  overflow: hidden;
+  border-radius: 7px;
+}
+
+.tool-dropdown-item:hover {
+  border-color: rgba(166, 213, 194, 0.5);
+  background: rgba(242, 251, 247, 0.6);
+  color: var(--leaf);
+}
+
+.tool-dropdown-item.active {
+  border-color: rgba(166, 213, 194, 0.68);
+  background: rgba(242, 251, 247, 0.82);
+  color: var(--mint-strong);
+}
+
+@keyframes tool-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 .nav-list {
   display: grid;
   align-content: start;

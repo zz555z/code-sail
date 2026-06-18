@@ -5,8 +5,8 @@ use std::{collections::HashSet, env, fs, path::{Path, PathBuf}};
 use toml_edit::{value, DocumentMut, Item, Table};
 
 use crate::storage::{
-    get_provider_token, get_setting, list_stored_providers, restrict_file_permissions,
-    SqliteConnection,
+    get_active_model, get_active_provider, get_provider_token, list_stored_providers,
+    restrict_file_permissions, SqliteConnection, ToolType,
 };
 
 pub(crate) struct ResolvedToken {
@@ -25,9 +25,9 @@ pub(crate) fn codex_config_path() -> Result<PathBuf> {
 }
 
 pub(crate) fn sync_codex_files(conn: &SqliteConnection, config_path: &Path) -> Result<()> {
-    let providers = list_stored_providers(conn, config_path)?;
-    let active_provider = get_setting(conn, "active_provider")?;
-    let active_model = get_setting(conn, "active_model")?;
+    let providers = list_stored_providers(conn, config_path, ToolType::Codex)?;
+    let active_provider = get_active_provider(conn, ToolType::Codex)?;
+    let active_model = get_active_model(conn, ToolType::Codex)?;
     let mut document = read_or_new_config(config_path)?;
 
     backup_file_if_exists(config_path)?;

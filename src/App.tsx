@@ -1,12 +1,14 @@
-import { type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { History, LayoutDashboard, Settings2 } from "lucide-react";
 import packageJson from "../package.json";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ActiveToolProvider } from "./contexts/ActiveToolContext";
 import { AppServicesProvider } from "./contexts/AppServicesContext";
 import { HistoryProvider } from "./contexts/HistoryContext";
 import { MessageProvider } from "./contexts/MessageContext";
 import { ProviderEditorProvider } from "./contexts/ProviderEditorContext";
+import { useActiveTool } from "./hooks/useActiveTool";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useHistorySessions } from "./hooks/useHistorySessions";
 import { useProviderEditor } from "./hooks/useProviderEditor";
@@ -16,6 +18,7 @@ import { useTransientMessage } from "./hooks/useTransientMessage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { ModelsPage } from "./pages/ModelsPage";
 import { OverviewPage } from "./pages/OverviewPage";
+import type { ToolType } from "./lib/types";
 
 type PageId = "overview" | "models" | "history";
 
@@ -29,17 +32,27 @@ export function App() {
   const appVersion = packageJson.version;
   const { message, setMessage, setPaused: setMessagePaused, messageClassName } = useTransientMessage();
   const { themePreference, cycleTheme } = useThemePreference();
+  const activeToolHook = useActiveTool();
   const providerEditor = useProviderEditor({ setMessage, setMessagePaused });
   const toolStatuses = useToolStatuses({ setMessage });
   const historySessions = useHistorySessions({ setMessage });
   const appUpdate = useAppUpdate({ appVersion, setMessage });
 
   useEffect(() => {
+    void activeToolHook.loadActiveTool();
     void providerEditor.refresh();
     void toolStatuses.refreshToolStatuses();
     void appUpdate.refreshAppUpdate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleToolSwitch = useCallback(async (tool: ToolType) => {
+    setMessage("");
+    await activeToolHook.switchTool(tool);
+    // Refresh providers for the new tool
+    await providerEditor.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeToolHook, providerEditor]);
 
   useEffect(() => {
     if (activePage === "history" || activePage === "overview") {
@@ -70,6 +83,15 @@ export function App() {
       openToolInstaller: toolStatuses.openToolInstaller
     }),
     [appVersion, appUpdate, toolStatuses]
+  );
+
+  const activeToolValue = useMemo(
+    () => ({
+      activeTool: activeToolHook.activeTool,
+      switching: activeToolHook.switching,
+      switchTool: handleToolSwitch
+    }),
+    [activeToolHook.activeTool, activeToolHook.switching, handleToolSwitch]
   );
 
   const navItems: Array<{ id: PageId; label: string; icon: ReactNode }> = useMemo(
@@ -104,33 +126,35 @@ export function App() {
       </aside>
 
       <ErrorBoundary>
-        <MessageProvider value={messageValue}>
-          <ProviderEditorProvider value={providerEditor}>
-            <AppServicesProvider value={appServicesValue}>
-              <HistoryProvider value={historySessions}>
-                <section className="workbench">
-                  {activePage === "overview" ? (
-                    <ErrorBoundary>
-                      <OverviewPage themePreference={themePreference} onCycleTheme={cycleTheme} />
-                    </ErrorBoundary>
-                  ) : null}
+        <ActiveToolProvider value={activeToolValue}>
+          <MessageProvider value={messageValue}>
+            <ProviderEditorProvider value={providerEditor}>
+              <AppServicesProvider value={appServicesValue}>
+                <HistoryProvider value={historySessions}>
+                  <section className="workbench">
+                    {activePage === "overview" ? (
+                      <ErrorBoundary>
+                        <OverviewPage themePreference={themePreference} onCycleTheme={cycleTheme} />
+                      </ErrorBoundary>
+                    ) : null}
 
-                  {activePage === "history" ? (
-                    <ErrorBoundary>
-                      <HistoryPage />
-                    </ErrorBoundary>
-                  ) : null}
+                    {activePage === "history" ? (
+                      <ErrorBoundary>
+                        <HistoryPage />
+                      </ErrorBoundary>
+                    ) : null}
 
-                  {activePage === "models" ? (
-                    <ErrorBoundary>
-                      <ModelsPage />
-                    </ErrorBoundary>
-                  ) : null}
-                </section>
-              </HistoryProvider>
-            </AppServicesProvider>
-          </ProviderEditorProvider>
-        </MessageProvider>
+                    {activePage === "models" ? (
+                      <ErrorBoundary>
+                        <ModelsPage />
+                      </ErrorBoundary>
+                    ) : null}
+                  </section>
+                </HistoryProvider>
+              </AppServicesProvider>
+            </ProviderEditorProvider>
+          </MessageProvider>
+        </ActiveToolProvider>
       </ErrorBoundary>
     </main>
   );

@@ -1,6 +1,8 @@
 // Type definitions matching Rust structs in src-tauri/src/
 // Manually maintained — update when Rust structs change
 
+export type ToolType = "codex" | "claude";
+
 export type ProviderView = {
   id: string;
   name: string | null;
@@ -9,6 +11,7 @@ export type ProviderView = {
   models: string[];
   token: string | null;
   tokenPresent: boolean;
+  toolType: ToolType;
 };
 
 export type AppState = {
@@ -17,6 +20,7 @@ export type AppState = {
   activeProvider: string | null;
   activeModel: string | null;
   providers: ProviderView[];
+  activeTool: ToolType;
 };
 
 export type ToolStatus = {
@@ -46,6 +50,7 @@ export type ProviderDraft = {
   baseUrl: string;
   model: string;
   token: string;
+  toolType: ToolType;
 };
 
 export type FetchModelsResponse = {
@@ -59,6 +64,17 @@ export type SaveProviderResponse = {
 
 export type CopyProviderResponse = {
   providerId: string;
+};
+
+export type ImportProvidersResponse = {
+  importedCount: number;
+};
+
+export type HealthCheckResponse = {
+  available: boolean;
+  latencyMs: number;
+  statusCode: number | null;
+  error: string | null;
 };
 
 export type HistoryMessage = {

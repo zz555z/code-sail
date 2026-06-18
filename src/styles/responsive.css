@@ -74,9 +74,14 @@
   }
 
   .config-row {
-    grid-template-columns: 12px minmax(0, 1fr);
-    min-height: 64px;
-    padding: 11px;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 72px;
+    padding: 11px 12px;
+  }
+
+  .config-row-content {
+    column-gap: 12px;
+    row-gap: 5px;
   }
 
   .history-layout {
@@ -89,12 +94,12 @@
   }
 
   .row-button {
-    width: 31px;
-    height: 31px;
+    width: 30px;
+    height: 30px;
   }
 
   .provider-copy {
-    max-width: min(54vw, 460px);
+    max-width: 100%;
   }
 
   input {

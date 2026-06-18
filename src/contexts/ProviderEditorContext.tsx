@@ -1,5 +1,7 @@
 import { createContext, useContext, type RefObject, type ReactNode } from "react";
-import type { AppState, ProviderDraft, ProviderView } from "../lib/types";
+import type { AppState, HealthCheckResponse, ProviderDraft, ProviderView } from "../lib/types";
+
+type HealthStatus = HealthCheckResponse | "loading";
 
 export type ProviderEditorContextValue = {
   state: AppState | null;
@@ -12,6 +14,7 @@ export type ProviderEditorContextValue = {
   activeProvider: ProviderView | null;
   editorOpen: boolean;
   busy: boolean;
+  importingProviders: boolean;
   restarting: boolean;
   loadingModels: boolean;
   modelMenuOpen: boolean;
@@ -19,6 +22,8 @@ export type ProviderEditorContextValue = {
   updateConfigFile: boolean;
   canSave: boolean;
   modelComboboxRef: RefObject<HTMLDivElement>;
+  healthCheckResults: Record<string, HealthStatus>;
+  healthCheckProvider: (provider: ProviderView) => Promise<void>;
   setUpdateConfigFile: (enabled: boolean) => void;
   setModelMenuOpen: (open: boolean | ((current: boolean) => boolean)) => void;
   setModelValue: (model: string) => void;
@@ -28,6 +33,8 @@ export type ProviderEditorContextValue = {
   openCreateProvider: () => void;
   openEditProvider: (provider: ProviderView) => void;
   copyProvider: (providerId: string) => Promise<void>;
+  importFromCodexToClaude: () => Promise<void>;
+  reorderProviders: (providerIds: string[]) => Promise<void>;
   setCurrentProvider: (provider: ProviderView) => Promise<void>;
   removeProvider: (providerId: string) => Promise<void>;
   closeEditor: () => void;

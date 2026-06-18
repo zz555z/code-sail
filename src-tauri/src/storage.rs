@@ -3,8 +3,12 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use rusqlite::{params_from_iter, types::Value as SqliteValue, Connection, OptionalExtension};
-use serde::Serialize;
-use std::{fs, path::{Path, PathBuf}};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashSet,
+    fmt, fs,
+    path::{Path, PathBuf},
+};
 
 // Keep legacy filenames so existing installs keep their saved providers/tokens after the app rename.
 const DATABASE_FILE_NAME: &str = "codex-config-desktop.sqlite3";
@@ -13,6 +17,42 @@ const TOKEN_PREFIX: &str = "enc:v1:";
 
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolType {
+    Codex,
+    Claude,
+}
+
+impl ToolType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ToolType::Codex => "codex",
+            ToolType::Claude => "claude",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "codex" => Ok(ToolType::Codex),
+            "claude" => Ok(ToolType::Claude),
+            other => bail!("unknown tool type: {other}"),
+        }
+    }
+}
+
+impl fmt::Display for ToolType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Default for ToolType {
+    fn default() -> Self {
+        ToolType::Codex
+    }
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +64,7 @@ pub struct ProviderView {
     models: Vec<String>,
     token: Option<String>,
     token_present: bool,
+    tool_type: ToolType,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +76,7 @@ pub(crate) struct StoredProvider {
     pub(crate) wire_api: String,
     pub(crate) requires_open_ai_auth: bool,
     pub(crate) token: Option<String>,
+    pub(crate) tool_type: ToolType,
 }
 
 fn database_path(config_path: &Path) -> Result<PathBuf> {
@@ -62,7 +104,8 @@ pub(crate) fn open_database(config_path: &Path) -> Result<SqliteConnection> {
             model TEXT,
             wire_api TEXT NOT NULL DEFAULT 'responses',
             requires_openai_auth INTEGER NOT NULL DEFAULT 1,
-            token TEXT
+            token TEXT,
+            position INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS provider_models (
             provider_id TEXT NOT NULL,
@@ -80,6 +123,15 @@ pub(crate) fn open_database(config_path: &Path) -> Result<SqliteConnection> {
     if !table_has_column(&conn, "providers", "model")? {
         conn.execute_batch("ALTER TABLE providers ADD COLUMN model TEXT;")?;
     }
+    if !table_has_column(&conn, "providers", "tool_type")? {
+        conn.execute_batch(
+            "ALTER TABLE providers ADD COLUMN tool_type TEXT NOT NULL DEFAULT 'codex';",
+        )?;
+    }
+    if !table_has_column(&conn, "providers", "position")? {
+        conn.execute_batch("ALTER TABLE providers ADD COLUMN position INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    normalize_provider_positions(&conn)?;
     encrypt_plaintext_tokens(&conn, config_path)?;
     restrict_file_permissions(&db_path)?;
     Ok(conn)
@@ -88,7 +140,9 @@ pub(crate) fn open_database(config_path: &Path) -> Result<SqliteConnection> {
 pub(crate) fn collect_providers_from_database(
     conn: &SqliteConnection,
     config_path: &Path,
+    tool_type: ToolType,
 ) -> Result<Vec<ProviderView>> {
+    let tool_type_str = tool_type.as_str();
     conn.query_all(
         r#"
         SELECT
@@ -96,13 +150,16 @@ pub(crate) fn collect_providers_from_database(
             name,
             base_url,
             model,
-            token IS NOT NULL AND length(trim(token)) > 0 AS token_present
+            token IS NOT NULL AND length(trim(token)) > 0 AS token_present,
+            tool_type
         FROM providers
-        ORDER BY lower(name), lower(id)
+        WHERE tool_type = ?1
+        ORDER BY position, lower(name), lower(id)
         "#,
-        &[],
+        &[SqlValue::Text(tool_type_str)],
         |row| {
             let id = row.string(0)?;
+            let tool_type_str = row.string(5)?;
             Ok(ProviderView {
                 id: id.clone(),
                 name: Some(row.string(1)?),
@@ -111,6 +168,7 @@ pub(crate) fn collect_providers_from_database(
                 models: get_provider_models(conn, &id)?,
                 token: get_provider_token(conn, config_path, &id)?,
                 token_present: row.i64(4)? != 0,
+                tool_type: ToolType::from_str(&tool_type_str).unwrap_or_default(),
             })
         },
     )
@@ -119,14 +177,17 @@ pub(crate) fn collect_providers_from_database(
 pub(crate) fn list_stored_providers(
     conn: &SqliteConnection,
     config_path: &Path,
+    tool_type: ToolType,
 ) -> Result<Vec<StoredProvider>> {
+    let tool_type_str = tool_type.as_str();
     let mut providers = conn.query_all(
         r#"
-        SELECT id, name, base_url, model, wire_api, requires_openai_auth, token
+        SELECT id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type
         FROM providers
-        ORDER BY lower(name), lower(id)
+        WHERE tool_type = ?1
+        ORDER BY position, lower(name), lower(id)
         "#,
-        &[],
+        &[SqlValue::Text(tool_type_str)],
         stored_provider_from_row,
     )?;
     for provider in &mut providers {
@@ -142,7 +203,7 @@ pub(crate) fn get_provider(
 ) -> Result<Option<StoredProvider>> {
     let mut provider = conn.query_one(
         r#"
-        SELECT id, name, base_url, model, wire_api, requires_openai_auth, token
+        SELECT id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type
         FROM providers
         WHERE id = ?1
         "#,
@@ -239,6 +300,87 @@ pub(crate) fn copy_provider_models(conn: &SqliteConnection, source_id: &str, tar
     replace_provider_models(conn, target_id, &models)
 }
 
+pub(crate) fn next_provider_position(conn: &SqliteConnection, tool_type: ToolType) -> Result<i64> {
+    conn.query_one(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM providers WHERE tool_type = ?1",
+        &[SqlValue::Text(tool_type.as_str())],
+        |row| row.i64(0),
+    )
+    .map(|value| value.unwrap_or(0))
+}
+
+pub(crate) fn reorder_provider_positions(
+    conn: &SqliteConnection,
+    tool_type: ToolType,
+    provider_ids: &[String],
+) -> Result<()> {
+    let tool_type_str = tool_type.as_str();
+    let current_ids = provider_ids_for_tool(conn, tool_type_str)?;
+    let current_set = current_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    let requested_set = provider_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+
+    if current_ids.len() != provider_ids.len() || current_set != requested_set {
+        bail!("配置列表已变化，请刷新后再排序");
+    }
+
+    with_transaction(conn, |conn| {
+        for (index, provider_id) in provider_ids.iter().enumerate() {
+            conn.execute(
+                "UPDATE providers SET position = ?1 WHERE id = ?2 AND tool_type = ?3",
+                &[
+                    SqlValue::I64(index as i64),
+                    SqlValue::Text(provider_id),
+                    SqlValue::Text(tool_type_str),
+                ],
+            )?;
+        }
+        Ok(())
+    })
+}
+
+fn normalize_provider_positions(conn: &SqliteConnection) -> Result<()> {
+    let tool_types = conn.query_all(
+        "SELECT DISTINCT tool_type FROM providers ORDER BY tool_type",
+        &[],
+        |row| row.string(0),
+    )?;
+
+    for tool_type in tool_types {
+        let provider_ids = provider_ids_for_tool(conn, &tool_type)?;
+        for (index, provider_id) in provider_ids.iter().enumerate() {
+            conn.execute(
+                "UPDATE providers SET position = ?1 WHERE id = ?2 AND tool_type = ?3",
+                &[
+                    SqlValue::I64(index as i64),
+                    SqlValue::Text(provider_id),
+                    SqlValue::Text(&tool_type),
+                ],
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn provider_ids_for_tool(conn: &SqliteConnection, tool_type: &str) -> Result<Vec<String>> {
+    conn.query_all(
+        r#"
+        SELECT id
+        FROM providers
+        WHERE tool_type = ?1
+        ORDER BY position, lower(name), lower(id)
+        "#,
+        &[SqlValue::Text(tool_type)],
+        |row| row.string(0),
+    )
+}
+
 fn table_has_column(conn: &SqliteConnection, table: &str, column: &str) -> Result<bool> {
     let sql = format!("PRAGMA table_info({})", sqlite_identifier(table)?);
     let columns = conn.query_all(&sql, &[], |row| row.string(1))?;
@@ -250,15 +392,17 @@ pub(crate) fn next_provider_id(
     name: &str,
     base_url: &str,
     skip_id: Option<&str>,
+    tool_type: ToolType,
 ) -> Result<String> {
     let base = slugify_provider_id(name)
         .or_else(|| infer_provider_id_from_url(base_url))
         .unwrap_or_else(|| "provider".to_string());
     let mut candidate = base.clone();
     let mut index = 2;
+    let tool_type_str = tool_type.as_str();
 
     loop {
-        if Some(candidate.as_str()) == skip_id || !provider_exists(conn, &candidate)? {
+        if Some(candidate.as_str()) == skip_id || !provider_exists_for_tool(conn, &candidate, tool_type_str)? {
             return Ok(candidate);
         }
         candidate = format!("{base}-{index}");
@@ -331,6 +475,7 @@ fn sqlite_identifier(identifier: &str) -> Result<String> {
 }
 
 fn stored_provider_from_row(row: &SqliteRow<'_>) -> Result<StoredProvider> {
+    let tool_type_str = row.string(7)?;
     Ok(StoredProvider {
         id: row.string(0)?,
         name: row.string(1)?,
@@ -339,6 +484,7 @@ fn stored_provider_from_row(row: &SqliteRow<'_>) -> Result<StoredProvider> {
         wire_api: row.string(4)?,
         requires_open_ai_auth: row.i64(5)? != 0,
         token: row.optional_string(6)?,
+        tool_type: ToolType::from_str(&tool_type_str).unwrap_or_default(),
     })
 }
 
@@ -397,6 +543,95 @@ pub(crate) fn provider_exists(conn: &SqliteConnection, provider_id: &str) -> Res
         .query_one(
             "SELECT COUNT(*) FROM providers WHERE id = ?1",
             &[SqlValue::Text(provider_id)],
+            |row| row.i64(0),
+        )?
+        .unwrap_or(0);
+    Ok(count > 0)
+}
+
+fn provider_exists_for_tool(conn: &SqliteConnection, provider_id: &str, tool_type: &str) -> Result<bool> {
+    let count = conn
+        .query_one(
+            "SELECT COUNT(*) FROM providers WHERE id = ?1 AND tool_type = ?2",
+            &[SqlValue::Text(provider_id), SqlValue::Text(tool_type)],
+            |row| row.i64(0),
+        )?
+        .unwrap_or(0);
+    Ok(count > 0)
+}
+
+pub(crate) fn get_active_tool(conn: &SqliteConnection) -> Result<ToolType> {
+    let value = get_setting(conn, "active_tool")?;
+    match value.as_deref() {
+        Some(s) => Ok(ToolType::from_str(s).unwrap_or_default()),
+        None => Ok(ToolType::default()),
+    }
+}
+
+pub(crate) fn set_active_tool(conn: &SqliteConnection, tool_type: ToolType) -> Result<()> {
+    set_setting(conn, "active_tool", tool_type.as_str())
+}
+
+pub(crate) fn get_active_provider(conn: &SqliteConnection, tool_type: ToolType) -> Result<Option<String>> {
+    if let Some(provider_id) = get_tool_setting(conn, "active_provider", tool_type)? {
+        return Ok(Some(provider_id));
+    }
+
+    let legacy = get_setting(conn, "active_provider")?;
+    match legacy {
+        Some(provider_id) if provider_belongs_to_tool(conn, &provider_id, tool_type)? => {
+            Ok(Some(provider_id))
+        }
+        _ => Ok(None),
+    }
+}
+
+pub(crate) fn get_active_model(conn: &SqliteConnection, tool_type: ToolType) -> Result<Option<String>> {
+    if let Some(model) = get_tool_setting(conn, "active_model", tool_type)? {
+        return Ok(Some(model));
+    }
+
+    let legacy_provider = get_setting(conn, "active_provider")?;
+    let legacy_model = get_setting(conn, "active_model")?;
+    match (legacy_provider, legacy_model) {
+        (Some(provider_id), Some(model)) if provider_belongs_to_tool(conn, &provider_id, tool_type)? => {
+            Ok(Some(model))
+        }
+        _ => Ok(None),
+    }
+}
+
+pub(crate) fn set_active_provider(conn: &SqliteConnection, tool_type: ToolType, provider_id: &str) -> Result<()> {
+    set_tool_setting(conn, "active_provider", tool_type, provider_id)
+}
+
+pub(crate) fn set_active_model(conn: &SqliteConnection, tool_type: ToolType, model: &str) -> Result<()> {
+    set_tool_setting(conn, "active_model", tool_type, model)
+}
+
+pub(crate) fn delete_active_settings(conn: &SqliteConnection, tool_type: ToolType) -> Result<()> {
+    delete_setting(conn, &tool_setting_key("active_provider", tool_type))?;
+    delete_setting(conn, &tool_setting_key("active_model", tool_type))?;
+    Ok(())
+}
+
+fn get_tool_setting(conn: &SqliteConnection, key: &str, tool_type: ToolType) -> Result<Option<String>> {
+    get_setting(conn, &tool_setting_key(key, tool_type))
+}
+
+fn set_tool_setting(conn: &SqliteConnection, key: &str, tool_type: ToolType, value: &str) -> Result<()> {
+    set_setting(conn, &tool_setting_key(key, tool_type), value)
+}
+
+fn tool_setting_key(key: &str, tool_type: ToolType) -> String {
+    format!("{}_{}", key, tool_type.as_str())
+}
+
+fn provider_belongs_to_tool(conn: &SqliteConnection, provider_id: &str, tool_type: ToolType) -> Result<bool> {
+    let count = conn
+        .query_one(
+            "SELECT COUNT(*) FROM providers WHERE id = ?1 AND tool_type = ?2",
+            &[SqlValue::Text(provider_id), SqlValue::Text(tool_type.as_str())],
             |row| row.i64(0),
         )?
         .unwrap_or(0);
@@ -678,43 +913,104 @@ mod tests {
             .join("config.toml")
     }
 
+    fn insert_test_provider(conn: &SqliteConnection, id: &str, name: &str) -> Result<()> {
+        insert_test_provider_for_tool(conn, id, name, ToolType::Codex)
+    }
+
+    fn insert_test_provider_for_tool(
+        conn: &SqliteConnection,
+        id: &str,
+        name: &str,
+        tool_type: ToolType,
+    ) -> Result<()> {
+        conn.execute(
+            r#"
+            INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "#,
+            &[
+                SqlValue::Text(id),
+                SqlValue::Text(name),
+                SqlValue::Text("https://api.example.com/v1"),
+                SqlValue::OptionalText(Some("gpt-5")),
+                SqlValue::Text("responses"),
+                SqlValue::I64(1),
+                SqlValue::OptionalText(None),
+                SqlValue::Text(tool_type.as_str()),
+            ],
+        )
+    }
+
     #[test]
     fn creates_incrementing_provider_copy_names() -> Result<()> {
         let config_path = temp_config_path("copy-names");
         let conn = open_database(&config_path)?;
-        conn.execute(
-            r#"
-            INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-            "#,
-            &[
-                SqlValue::Text("openai"),
-                SqlValue::Text("OpenAI"),
-                SqlValue::Text("https://api.openai.com/v1"),
-                SqlValue::OptionalText(Some("gpt-5")),
-                SqlValue::Text("responses"),
-                SqlValue::I64(1),
-                SqlValue::OptionalText(None),
-            ],
-        )?;
-        conn.execute(
-            r#"
-            INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-            "#,
-            &[
-                SqlValue::Text("openai-copy"),
-                SqlValue::Text("OpenAI copy1"),
-                SqlValue::Text("https://api.openai.com/v1"),
-                SqlValue::OptionalText(Some("gpt-5")),
-                SqlValue::Text("responses"),
-                SqlValue::I64(1),
-                SqlValue::OptionalText(None),
-            ],
-        )?;
+        insert_test_provider(&conn, "openai", "OpenAI")?;
+        insert_test_provider(&conn, "openai-copy", "OpenAI copy1")?;
 
         assert_eq!(next_copy_name(&conn, "OpenAI")?, "OpenAI copy2");
         assert_eq!(next_copy_name(&conn, "OpenAI copy1")?, "OpenAI copy2");
+
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::remove_dir_all(parent);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn reorders_providers_for_the_active_tool() -> Result<()> {
+        let config_path = temp_config_path("provider-order");
+        let conn = open_database(&config_path)?;
+        insert_test_provider(&conn, "alpha", "Alpha")?;
+        insert_test_provider(&conn, "beta", "Beta")?;
+        insert_test_provider(&conn, "gamma", "Gamma")?;
+
+        reorder_provider_positions(
+            &conn,
+            ToolType::Codex,
+            &["gamma".to_string(), "alpha".to_string(), "beta".to_string()],
+        )?;
+
+        let providers = collect_providers_from_database(&conn, &config_path, ToolType::Codex)?;
+        let provider_ids = providers
+            .into_iter()
+            .map(|provider| provider.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(provider_ids, vec!["gamma", "alpha", "beta"]);
+        assert_eq!(next_provider_position(&conn, ToolType::Codex)?, 3);
+
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::remove_dir_all(parent);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn keeps_active_provider_and_model_separate_per_tool() -> Result<()> {
+        let config_path = temp_config_path("active-tool-settings");
+        let conn = open_database(&config_path)?;
+        insert_test_provider_for_tool(&conn, "codex-provider", "Codex Provider", ToolType::Codex)?;
+        insert_test_provider_for_tool(&conn, "claude-provider", "Claude Provider", ToolType::Claude)?;
+
+        set_active_provider(&conn, ToolType::Codex, "codex-provider")?;
+        set_active_model(&conn, ToolType::Codex, "gpt-5")?;
+        set_active_provider(&conn, ToolType::Claude, "claude-provider")?;
+        set_active_model(&conn, ToolType::Claude, "claude-opus-4-7")?;
+
+        assert_eq!(
+            get_active_provider(&conn, ToolType::Codex)?.as_deref(),
+            Some("codex-provider")
+        );
+        assert_eq!(get_active_model(&conn, ToolType::Codex)?.as_deref(), Some("gpt-5"));
+        assert_eq!(
+            get_active_provider(&conn, ToolType::Claude)?.as_deref(),
+            Some("claude-provider")
+        );
+        assert_eq!(
+            get_active_model(&conn, ToolType::Claude)?.as_deref(),
+            Some("claude-opus-4-7")
+        );
 
         if let Some(parent) = config_path.parent() {
             let _ = fs::remove_dir_all(parent);

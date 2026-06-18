@@ -5,11 +5,14 @@ import type {
   CopyProviderResponse,
   DeleteHistoryResponse,
   FetchModelsResponse,
+  HealthCheckResponse,
   HistoryConversation,
   HistoryProviderGroup,
+  ImportProvidersResponse,
   ProviderDraft,
   SaveProviderResponse,
-  ToolStatus
+  ToolStatus,
+  ToolType
 } from "./types";
 
 async function invokeCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -40,7 +43,8 @@ export async function saveProvider(provider: ProviderDraft, updateConfig: boolea
   return await invokeCommand<SaveProviderResponse>("save_provider", {
     input: {
       ...provider,
-      updateConfig
+      updateConfig,
+      toolType: provider.toolType
     }
   });
 }
@@ -49,8 +53,16 @@ export async function copyProvider(providerId: string): Promise<CopyProviderResp
   return await invokeCommand<CopyProviderResponse>("copy_provider", { providerId });
 }
 
+export async function importCodexProvidersToClaude(): Promise<ImportProvidersResponse> {
+  return await invokeCommand<ImportProvidersResponse>("import_codex_providers_to_claude");
+}
+
 export async function deleteProvider(providerId: string): Promise<void> {
   await invokeCommand<void>("delete_provider", { providerId });
+}
+
+export async function reorderProviders(providerIds: string[]): Promise<void> {
+  await invokeCommand<void>("reorder_providers", { providerIds });
 }
 
 export async function fetchModels(provider: ProviderDraft): Promise<FetchModelsResponse> {
@@ -60,8 +72,20 @@ export async function fetchModels(provider: ProviderDraft): Promise<FetchModelsR
       name: provider.name,
       baseUrl: provider.baseUrl,
       model: provider.model,
-      token: provider.token || null
+      token: provider.token || null,
+      toolType: provider.toolType
     }
+  });
+}
+
+export async function checkProviderHealth(
+  baseUrl: string,
+  token: string,
+  model: string,
+  toolType: ToolType
+): Promise<HealthCheckResponse> {
+  return await invokeCommand<HealthCheckResponse>("check_provider_health", {
+    input: { baseUrl, token, model, toolType }
   });
 }
 
@@ -87,6 +111,10 @@ export async function restartCodexApp(): Promise<void> {
 
 export async function openCodexTerminal(): Promise<void> {
   await invokeCommand<void>("open_codex_terminal");
+}
+
+export async function openClaudeTerminal(): Promise<void> {
+  await invokeCommand<void>("open_claude_terminal");
 }
 
 export async function openToolInstall(command: string): Promise<void> {
@@ -121,4 +149,12 @@ export async function deleteHistoryProvider(provider: string): Promise<DeleteHis
   return await invokeCommand<DeleteHistoryResponse>("delete_history_provider", {
     input: { provider }
   });
+}
+
+export async function getActiveTool(): Promise<ToolType> {
+  return await invokeCommand<ToolType>("get_active_tool_command");
+}
+
+export async function setActiveTool(toolType: ToolType): Promise<void> {
+  await invokeCommand<void>("set_active_tool_command", { toolType });
 }

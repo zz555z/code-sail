@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  checkProviderHealth,
   copyProvider as copyProviderCommand,
   deleteProvider,
   fetchModels,
   getAppState,
+  importCodexProvidersToClaude,
+  reorderProviders as reorderProvidersCommand,
   restartCodexApp,
   saveProvider,
   setCurrentModel as setCurrentModelCommand
 } from "../lib/api";
 import { comparableDraft, comparableProvider, draftFromProvider, emptyDraft } from "../lib/providerDraft";
-import type { AppState, ProviderDraft, ProviderView } from "../lib/types";
+import type { AppState, HealthCheckResponse, ProviderDraft, ProviderView } from "../lib/types";
+
+type HealthStatus = HealthCheckResponse | "loading";
 
 type UseProviderEditorOptions = {
   setMessage: (message: string) => void;
@@ -24,11 +29,14 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   const [modelValue, setModelValue] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [importingProviders, setImportingProviders] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [tokenVisible, setTokenVisible] = useState(false);
   const [updateConfigFile, setUpdateConfigFile] = useState(true);
+  const [healthCheckResults, setHealthCheckResults] = useState<Record<string, HealthStatus>>({});
+  const healthTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const modelComboboxRef = useRef<HTMLDivElement>(null);
 
   async function refresh(options?: { preferredId?: string | null }) {
@@ -108,7 +116,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
 
   function openCreateProvider() {
     setSelectedId(null);
-    setDraft({ ...emptyDraft });
+    setDraft({ ...emptyDraft, toolType: state?.activeTool ?? "codex" });
     setModels([]);
     setModelMenuOpen(false);
     setModelValue("");
@@ -154,6 +162,26 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     }
   }
 
+  async function importFromCodexToClaude() {
+    setImportingProviders(true);
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await importCodexProvidersToClaude();
+      await refresh({ preferredId: null });
+      setMessage(
+        result.importedCount > 0
+          ? `已导入 ${result.importedCount} 条 codex 配置到 Claude。`
+          : "没有可导入的 codex 配置。"
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setImportingProviders(false);
+      setBusy(false);
+    }
+  }
+
   async function removeProvider(providerId: string) {
     setBusy(true);
     setMessage("");
@@ -168,6 +196,42 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       await refresh({ preferredId: null });
       setMessage(`已删除 ${providerId}。`);
     } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reorderProviders(providerIds: string[]) {
+    if (!state) return;
+
+    const currentIds = state.providers.map((provider) => provider.id);
+    const sameOrder =
+      providerIds.length === currentIds.length &&
+      providerIds.every((providerId, index) => providerId === currentIds[index]);
+    if (sameOrder) return;
+
+    const providerMap = new Map(state.providers.map((provider) => [provider.id, provider]));
+    const nextProviders = providerIds
+      .map((providerId) => providerMap.get(providerId))
+      .filter((provider): provider is ProviderView => Boolean(provider));
+
+    if (nextProviders.length !== state.providers.length) {
+      setMessage("配置列表已变化，请刷新后再排序。");
+      return;
+    }
+
+    const previousState = state;
+    setBusy(true);
+    setMessage("");
+    setState({ ...state, providers: nextProviders });
+
+    try {
+      await reorderProvidersCommand(providerIds);
+      setMessage("已更新配置顺序。");
+    } catch (error) {
+      setState(previousState);
+      await refresh({ preferredId: selectedId });
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
@@ -301,6 +365,58 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     }
   }
 
+  async function healthCheckProvider(provider: ProviderView) {
+    const baseUrl = (provider.baseUrl || "").trim();
+    if (!baseUrl) {
+      setMessage("该配置没有 Base URL。");
+      return;
+    }
+
+    setHealthCheckResults((prev) => ({ ...prev, [provider.id]: "loading" }));
+
+    // Clear any existing auto-clear timer for this provider
+    const existingTimer = healthTimersRef.current.get(provider.id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      healthTimersRef.current.delete(provider.id);
+    }
+
+    try {
+      const result = await checkProviderHealth(
+        baseUrl,
+        provider.token || "",
+        provider.model || "",
+        provider.toolType
+      );
+      setHealthCheckResults((prev) => ({ ...prev, [provider.id]: result }));
+
+      if (result.available) {
+        setMessage(`${provider.name || provider.id} 可用，延迟 ${result.latencyMs}ms。`);
+      } else {
+        const detail = result.error ? `: ${result.error}` : "";
+        setMessage(`${provider.name || provider.id} 不可用${detail}`);
+      }
+
+      // Auto-clear result after 5 seconds
+      const timer = setTimeout(() => {
+        setHealthCheckResults((prev) => {
+          const next = { ...prev };
+          delete next[provider.id];
+          return next;
+        });
+        healthTimersRef.current.delete(provider.id);
+      }, 5000);
+      healthTimersRef.current.set(provider.id, timer);
+    } catch (error) {
+      setHealthCheckResults((prev) => {
+        const next = { ...prev };
+        delete next[provider.id];
+        return next;
+      });
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return {
     state,
     selected,
@@ -312,6 +428,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     activeProvider,
     editorOpen,
     busy,
+    importingProviders,
     restarting,
     loadingModels,
     modelMenuOpen,
@@ -328,12 +445,16 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     openCreateProvider,
     openEditProvider,
     copyProvider,
+    importFromCodexToClaude,
+    reorderProviders,
     setCurrentProvider,
     removeProvider,
     closeEditor,
     updateDraft,
     selectModel,
     fetchProviderModels,
-    saveCurrentProvider
+    saveCurrentProvider,
+    healthCheckResults,
+    healthCheckProvider
   };
 }

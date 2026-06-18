@@ -1,11 +1,16 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
+use crate::claude_config::sync_claude_settings;
 use crate::codex_config::{codex_config_path, normalize_base_url, sync_codex_files};
 use crate::storage::{
-    bool_to_i64, copy_provider_models, delete_setting, encrypt_optional_token, get_provider,
-    get_provider_token, get_setting, next_copy_id, next_copy_name, next_provider_id,
-    open_database, optional_non_empty, provider_exists, set_setting, with_transaction, SqlValue,
+    bool_to_i64, copy_provider_models, delete_active_settings, encrypt_optional_token,
+    get_active_provider, get_active_tool, get_provider, get_provider_token,
+    list_stored_providers, next_copy_id, next_copy_name, next_provider_id,
+    next_provider_position, open_database, optional_non_empty, provider_exists,
+    reorder_provider_positions, set_active_model, set_active_provider, with_transaction,
+    SqliteConnection, SqlValue, ToolType,
 };
 use crate::tasks::run_background_task;
 
@@ -18,6 +23,7 @@ pub struct ProviderInput {
     pub model: String,
     pub token: Option<String>,
     pub update_config: bool,
+    pub tool_type: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -30,6 +36,12 @@ pub struct SaveProviderResponse {
 #[serde(rename_all = "camelCase")]
 pub struct CopyProviderResponse {
     pub provider_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProvidersResponse {
+    pub imported_count: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,8 +68,22 @@ pub async fn copy_provider(provider_id: String) -> Result<CopyProviderResponse, 
 }
 
 #[tauri::command]
+pub async fn import_codex_providers_to_claude() -> Result<ImportProvidersResponse, String> {
+    run_background_task("claude-import-codex-providers", import_codex_providers_to_claude_inner)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn delete_provider(provider_id: String) -> Result<(), String> {
     run_background_task("codex-delete-provider", move || delete_provider_inner(&provider_id))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn reorder_providers(provider_ids: Vec<String>) -> Result<(), String> {
+    run_background_task("codex-reorder-providers", move || reorder_providers_inner(provider_ids))
         .await
         .map_err(|error| error.to_string())
 }
@@ -73,6 +99,11 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     let name = input.name.trim();
     let base_url = input.base_url.trim();
     let model = input.model.trim();
+    let tool_type = input
+        .tool_type
+        .as_deref()
+        .and_then(|s| ToolType::from_str(s).ok())
+        .unwrap_or_default();
 
     if base_url.is_empty() {
         bail!("Base URL 不能为空");
@@ -84,7 +115,7 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     let provider_id = if !original_id.is_empty() && provider_exists(&conn, original_id)? {
         original_id.to_string()
     } else {
-        next_provider_id(&conn, name, base_url, None)?
+        next_provider_id(&conn, name, base_url, None, tool_type)?
     };
     let explicit_token = input
         .token
@@ -103,21 +134,26 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     };
     let token = explicit_token.or(existing_token);
     let stored_token = encrypt_optional_token(&config_path, token.as_deref())?;
-    let normalized_base_url = normalize_base_url(base_url);
+    let normalized_base_url = match tool_type {
+        ToolType::Claude => base_url.to_string(),
+        ToolType::Codex => normalize_base_url(base_url),
+    };
     let provider_name = if name.is_empty() { provider_id.as_str() } else { name };
+    let tool_type_str = tool_type.as_str();
+    let position = next_provider_position(&conn, tool_type)?;
 
     with_transaction(&conn, |conn| {
         if !original_id.is_empty() && original_id != provider_id {
             conn.execute("DELETE FROM providers WHERE id = ?1", &[SqlValue::Text(original_id)])?;
-            if get_setting(conn, "active_provider")?.as_deref() == Some(original_id) {
-                set_setting(conn, "active_provider", &provider_id)?;
+            if get_active_provider(conn, tool_type)?.as_deref() == Some(original_id) {
+                set_active_provider(conn, tool_type, &provider_id)?;
             }
         }
 
         conn.execute(
             r#"
-            INSERT INTO providers (id, name, base_url, model, token)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO providers (id, name, base_url, model, token, tool_type, position)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 base_url = excluded.base_url,
@@ -130,19 +166,21 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
                 SqlValue::Text(&normalized_base_url),
                 SqlValue::OptionalText(optional_non_empty(model)),
                 SqlValue::OptionalText(stored_token.as_deref()),
+                SqlValue::Text(tool_type_str),
+                SqlValue::I64(position),
             ],
         )?;
         if input.update_config {
-            set_setting(conn, "active_provider", &provider_id)?;
+            set_active_provider(conn, tool_type, &provider_id)?;
             if let Some(model) = optional_non_empty(model) {
-                set_setting(conn, "active_model", model)?;
+                set_active_model(conn, tool_type, model)?;
             }
         }
         Ok(())
     })?;
 
     if input.update_config {
-        sync_codex_files(&conn, &config_path)?;
+        sync_tool_config(&conn, &config_path, tool_type)?;
     }
     Ok(SaveProviderResponse {
         provider_id,
@@ -157,21 +195,42 @@ fn delete_provider_inner(provider_id: &str) -> Result<()> {
 
     let config_path = codex_config_path()?;
     let conn = open_database(&config_path)?;
+
+    // Look up tool_type before deleting
+    let tool_type = get_provider(&conn, &config_path, id)?
+        .map(|p| p.tool_type)
+        .unwrap_or_default();
+
     with_transaction(&conn, |conn| {
         conn.execute(
             "DELETE FROM provider_models WHERE provider_id = ?1",
             &[SqlValue::Text(id)],
         )?;
         conn.execute("DELETE FROM providers WHERE id = ?1", &[SqlValue::Text(id)])?;
-        if get_setting(conn, "active_provider")?.as_deref() == Some(id) {
-            delete_setting(conn, "active_provider")?;
-            delete_setting(conn, "active_model")?;
+        if get_active_provider(conn, tool_type)?.as_deref() == Some(id) {
+            delete_active_settings(conn, tool_type)?;
         }
         Ok(())
     })?;
 
-    sync_codex_files(&conn, &config_path)?;
+    sync_tool_config(&conn, &config_path, tool_type)?;
     Ok(())
+}
+
+fn reorder_providers_inner(provider_ids: Vec<String>) -> Result<()> {
+    let provider_ids = provider_ids
+        .into_iter()
+        .map(|id| id.trim().to_string())
+        .collect::<Vec<_>>();
+
+    if provider_ids.iter().any(|id| id.is_empty()) {
+        bail!("配置列表包含空 provider ID");
+    }
+
+    let config_path = codex_config_path()?;
+    let conn = open_database(&config_path)?;
+    let active_tool = get_active_tool(&conn)?;
+    reorder_provider_positions(&conn, active_tool, &provider_ids)
 }
 
 fn copy_provider_inner(provider_id: &str) -> Result<CopyProviderResponse> {
@@ -187,11 +246,13 @@ fn copy_provider_inner(provider_id: &str) -> Result<CopyProviderResponse> {
     let copy_id = next_copy_id(&conn, source_id)?;
     let copy_name = next_copy_name(&conn, &source.name)?;
     let copied_token = encrypt_optional_token(&config_path, source.token.as_deref())?;
+    let tool_type_str = source.tool_type.as_str();
+    let position = next_provider_position(&conn, source.tool_type)?;
 
     conn.execute(
         r#"
-        INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type, position)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
         "#,
         &[
             SqlValue::Text(&copy_id),
@@ -201,14 +262,93 @@ fn copy_provider_inner(provider_id: &str) -> Result<CopyProviderResponse> {
             SqlValue::Text(&source.wire_api),
             SqlValue::I64(bool_to_i64(source.requires_open_ai_auth)),
             SqlValue::OptionalText(copied_token.as_deref()),
+            SqlValue::Text(tool_type_str),
+            SqlValue::I64(position),
         ],
     )?;
     copy_provider_models(&conn, source_id, &copy_id)?;
 
-    sync_codex_files(&conn, &config_path)?;
+    sync_tool_config(&conn, &config_path, source.tool_type)?;
     Ok(CopyProviderResponse {
         provider_id: copy_id,
     })
+}
+
+fn import_codex_providers_to_claude_inner() -> Result<ImportProvidersResponse> {
+    let config_path = codex_config_path()?;
+    let conn = open_database(&config_path)?;
+    let existing_claude = list_stored_providers(&conn, &config_path, ToolType::Claude)?;
+    if !existing_claude.is_empty() {
+        return Ok(ImportProvidersResponse { imported_count: 0 });
+    }
+
+    let codex_providers = list_stored_providers(&conn, &config_path, ToolType::Codex)?;
+    if codex_providers.is_empty() {
+        return Ok(ImportProvidersResponse { imported_count: 0 });
+    }
+
+    let mut copied_pairs = Vec::with_capacity(codex_providers.len());
+    let mut next_position = next_provider_position(&conn, ToolType::Claude)?;
+
+    with_transaction(&conn, |conn| {
+        for source in &codex_providers {
+            let target_id = next_imported_claude_provider_id(conn, &source.id)?;
+            let copied_token = encrypt_optional_token(&config_path, source.token.as_deref())?;
+
+            conn.execute(
+                r#"
+                INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type, position)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "#,
+                &[
+                    SqlValue::Text(&target_id),
+                    SqlValue::Text(&source.name),
+                    SqlValue::Text(&source.base_url),
+                    SqlValue::OptionalText(source.model.as_deref()),
+                    SqlValue::Text(&source.wire_api),
+                    SqlValue::I64(bool_to_i64(source.requires_open_ai_auth)),
+                    SqlValue::OptionalText(copied_token.as_deref()),
+                    SqlValue::Text(ToolType::Claude.as_str()),
+                    SqlValue::I64(next_position),
+                ],
+            )?;
+            next_position += 1;
+            copied_pairs.push((source.id.clone(), target_id));
+            if let Some((source_id, target_id)) = copied_pairs.last() {
+                copy_provider_models(conn, source_id, target_id)?;
+            }
+        }
+
+        if let Some((_, first_target_id)) = copied_pairs.first() {
+            set_active_provider(conn, ToolType::Claude, first_target_id)?;
+            if let Some(model) = codex_providers
+                .first()
+                .and_then(|provider| provider.model.as_deref())
+                .filter(|model| !model.trim().is_empty())
+            {
+                set_active_model(conn, ToolType::Claude, model)?;
+            }
+        }
+
+        Ok(())
+    })?;
+
+    Ok(ImportProvidersResponse {
+        imported_count: copied_pairs.len(),
+    })
+}
+
+fn next_imported_claude_provider_id(conn: &SqliteConnection, source_id: &str) -> Result<String> {
+    let base = format!("{}-claude", source_id.trim().trim_end_matches("-claude"));
+    let mut candidate = base.clone();
+    let mut index = 2;
+
+    while provider_exists(conn, &candidate)? {
+        candidate = format!("{base}-{index}");
+        index += 1;
+    }
+
+    Ok(candidate)
 }
 
 fn set_current_model_inner(input: SetCurrentModelRequest) -> Result<()> {
@@ -225,6 +365,7 @@ fn set_current_model_inner(input: SetCurrentModelRequest) -> Result<()> {
     let conn = open_database(&config_path)?;
     let provider = get_provider(&conn, &config_path, provider_id)?
         .with_context(|| format!("未找到 provider: {provider_id}"))?;
+    let tool_type = provider.tool_type;
     let token = input
         .token
         .as_deref()
@@ -250,13 +391,25 @@ fn set_current_model_inner(input: SetCurrentModelRequest) -> Result<()> {
                 &[SqlValue::Text(model), SqlValue::Text(provider_id)],
             )?;
         }
-        set_setting(conn, "active_provider", provider_id)?;
-        set_setting(conn, "active_model", model)?;
+        set_active_provider(conn, tool_type, provider_id)?;
+        set_active_model(conn, tool_type, model)?;
         Ok(())
     })?;
 
     if input.update_config {
-        sync_codex_files(&conn, &config_path)?;
+        sync_tool_config(&conn, &config_path, tool_type)?;
     }
     Ok(())
+}
+
+/// Dispatches config sync to the correct tool based on tool_type.
+fn sync_tool_config(
+    conn: &SqliteConnection,
+    config_path: &Path,
+    tool_type: ToolType,
+) -> Result<()> {
+    match tool_type {
+        ToolType::Codex => sync_codex_files(conn, config_path),
+        ToolType::Claude => sync_claude_settings(conn, config_path),
+    }
 }

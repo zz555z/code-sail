@@ -1,6 +1,9 @@
-import { memo } from "react";
-import { Copy, MousePointerClick, Pencil, Trash2 } from "lucide-react";
-import type { ProviderView } from "../lib/types";
+import { memo, type PointerEvent } from "react";
+import { Copy, HeartPulse, Loader2, MousePointerClick, Pencil, Trash2 } from "lucide-react";
+import type { HealthCheckResponse, ProviderView } from "../lib/types";
+
+type HealthStatus = HealthCheckResponse | "loading";
+type DragOverPlacement = "before" | "after";
 
 type ProviderRowProps = {
   provider: ProviderView;
@@ -8,9 +11,14 @@ type ProviderRowProps = {
   activeModel: string;
   selected: boolean;
   busy: boolean;
+  dragging?: boolean;
+  dragOverPlacement?: DragOverPlacement | null;
+  healthStatus?: HealthStatus;
+  onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
   onEdit: () => void;
   onCopy: () => void;
   onSetCurrent: () => void;
+  onHealthCheck: () => void;
   onDelete: () => void;
 };
 
@@ -20,17 +28,32 @@ export const ProviderRow = memo(function ProviderRow({
   activeModel,
   selected,
   busy,
+  dragging = false,
+  dragOverPlacement = null,
+  healthStatus,
+  onPointerDown,
   onEdit,
   onCopy,
   onSetCurrent,
+  onHealthCheck,
   onDelete
 }: ProviderRowProps) {
+  const rowClassName = [
+    "config-row",
+    selected ? "selected" : "",
+    active ? "active" : "",
+    dragging ? "is-dragging" : "",
+    dragOverPlacement ? `drag-over-${dragOverPlacement}` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <article className={`config-row ${selected ? "selected" : ""} ${active ? "active" : ""}`}>
-      <span className="provider-beacon">
-        <span />
-      </span>
-
+    <article
+      className={rowClassName}
+      data-provider-row-id={provider.id}
+      onPointerDown={onPointerDown}
+      role="listitem"
+    >
       <div className="config-row-content">
         <div className="config-row-top">
           <div className="provider-copy" title={provider.id}>
@@ -74,6 +97,23 @@ export const ProviderRow = memo(function ProviderRow({
                 disabled={busy}
               >
                 <Copy size={15} />
+              </button>
+              <button
+                className={`row-button health-check ${healthStatus === "loading" ? "health-check-loading" : ""} ${healthStatus && healthStatus !== "loading" ? (healthStatus.available ? "health-ok" : "health-err") : ""}`}
+                type="button"
+                data-tooltip={
+                  healthStatus === "loading"
+                    ? "检查中..."
+                    : healthStatus
+                      ? (healthStatus.available ? `可用 · ${healthStatus.latencyMs}ms` : `不可用${healthStatus.error ? ": " + healthStatus.error : ""}`)
+                      : "健康检查"
+                }
+                data-tooltip-placement="left"
+                aria-label={healthStatus === "loading" ? "检查中" : "健康检查"}
+                onClick={onHealthCheck}
+                disabled={busy || healthStatus === "loading"}
+              >
+                {healthStatus === "loading" ? <Loader2 size={15} /> : <HeartPulse size={15} />}
               </button>
               <button
                 className="row-button danger"
