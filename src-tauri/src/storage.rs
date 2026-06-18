@@ -5,15 +5,17 @@ use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvI
 use rusqlite::{params_from_iter, types::Value as SqliteValue, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt, fs,
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 
 // Keep legacy filenames so existing installs keep their saved providers/tokens after the app rename.
 const DATABASE_FILE_NAME: &str = "codex-config-desktop.sqlite3";
 const TOKEN_KEY_FILE_NAME: &str = "codex-config-desktop.key";
 const TOKEN_PREFIX: &str = "enc:v1:";
+static INITIALIZED_DATABASES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
@@ -62,7 +64,6 @@ pub struct ProviderView {
     base_url: Option<String>,
     model: Option<String>,
     models: Vec<String>,
-    token: Option<String>,
     token_present: bool,
     tool_type: ToolType,
 }
@@ -94,9 +95,26 @@ pub(crate) fn open_database(config_path: &Path) -> Result<SqliteConnection> {
     }
 
     let conn = SqliteConnection::open(&db_path)?;
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    initialize_database_once(&conn, config_path, &db_path)?;
+    Ok(conn)
+}
+
+fn initialize_database_once(
+    conn: &SqliteConnection,
+    config_path: &Path,
+    db_path: &Path,
+) -> Result<()> {
+    let initialized = INITIALIZED_DATABASES.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut initialized = initialized
+        .lock()
+        .map_err(|_| anyhow!("database initialization lock is poisoned"))?;
+    if initialized.contains(db_path) {
+        return Ok(());
+    }
+
     conn.execute_batch(
         r#"
-        PRAGMA foreign_keys = ON;
         CREATE TABLE IF NOT EXISTS providers (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -120,29 +138,30 @@ pub(crate) fn open_database(config_path: &Path) -> Result<SqliteConnection> {
         );
         "#,
     )?;
-    if !table_has_column(&conn, "providers", "model")? {
+    if !table_has_column(conn, "providers", "model")? {
         conn.execute_batch("ALTER TABLE providers ADD COLUMN model TEXT;")?;
     }
-    if !table_has_column(&conn, "providers", "tool_type")? {
+    if !table_has_column(conn, "providers", "tool_type")? {
         conn.execute_batch(
             "ALTER TABLE providers ADD COLUMN tool_type TEXT NOT NULL DEFAULT 'codex';",
         )?;
     }
-    if !table_has_column(&conn, "providers", "position")? {
+    if !table_has_column(conn, "providers", "position")? {
         conn.execute_batch("ALTER TABLE providers ADD COLUMN position INTEGER NOT NULL DEFAULT 0;")?;
     }
-    normalize_provider_positions(&conn)?;
-    encrypt_plaintext_tokens(&conn, config_path)?;
-    restrict_file_permissions(&db_path)?;
-    Ok(conn)
+    normalize_provider_positions(conn)?;
+    encrypt_plaintext_tokens(conn, config_path)?;
+    restrict_file_permissions(db_path)?;
+    initialized.insert(db_path.to_path_buf());
+    Ok(())
 }
 
 pub(crate) fn collect_providers_from_database(
     conn: &SqliteConnection,
-    config_path: &Path,
     tool_type: ToolType,
 ) -> Result<Vec<ProviderView>> {
     let tool_type_str = tool_type.as_str();
+    let provider_models = get_provider_models_for_tool(conn, tool_type)?;
     conn.query_all(
         r#"
         SELECT
@@ -165,8 +184,7 @@ pub(crate) fn collect_providers_from_database(
                 name: Some(row.string(1)?),
                 base_url: Some(row.string(2)?),
                 model: row.optional_string(3)?,
-                models: get_provider_models(conn, &id)?,
-                token: get_provider_token(conn, config_path, &id)?,
+                models: provider_models.get(&id).cloned().unwrap_or_default(),
                 token_present: row.i64(4)? != 0,
                 tool_type: ToolType::from_str(&tool_type_str).unwrap_or_default(),
             })
@@ -255,7 +273,7 @@ fn encrypt_plaintext_tokens(conn: &SqliteConnection, config_path: &Path) -> Resu
     Ok(())
 }
 
-fn get_provider_models(conn: &SqliteConnection, provider_id: &str) -> Result<Vec<String>> {
+pub(crate) fn get_provider_models(conn: &SqliteConnection, provider_id: &str) -> Result<Vec<String>> {
     conn.query_all(
         r#"
         SELECT model
@@ -266,6 +284,28 @@ fn get_provider_models(conn: &SqliteConnection, provider_id: &str) -> Result<Vec
         &[SqlValue::Text(provider_id)],
         |row| row.string(0),
     )
+}
+
+fn get_provider_models_for_tool(
+    conn: &SqliteConnection,
+    tool_type: ToolType,
+) -> Result<HashMap<String, Vec<String>>> {
+    let rows = conn.query_all(
+        r#"
+        SELECT pm.provider_id, pm.model
+        FROM provider_models pm
+        INNER JOIN providers p ON p.id = pm.provider_id
+        WHERE p.tool_type = ?1
+        ORDER BY pm.provider_id, pm.position, pm.model
+        "#,
+        &[SqlValue::Text(tool_type.as_str())],
+        |row| Ok((row.string(0)?, row.string(1)?)),
+    )?;
+    let mut models = HashMap::<String, Vec<String>>::new();
+    for (provider_id, model) in rows {
+        models.entry(provider_id).or_default().push(model);
+    }
+    Ok(models)
 }
 
 pub(crate) fn replace_provider_models(
@@ -392,17 +432,14 @@ pub(crate) fn next_provider_id(
     name: &str,
     base_url: &str,
     skip_id: Option<&str>,
-    tool_type: ToolType,
 ) -> Result<String> {
     let base = slugify_provider_id(name)
         .or_else(|| infer_provider_id_from_url(base_url))
         .unwrap_or_else(|| "provider".to_string());
     let mut candidate = base.clone();
     let mut index = 2;
-    let tool_type_str = tool_type.as_str();
-
     loop {
-        if Some(candidate.as_str()) == skip_id || !provider_exists_for_tool(conn, &candidate, tool_type_str)? {
+        if Some(candidate.as_str()) == skip_id || !provider_exists(conn, &candidate)? {
             return Ok(candidate);
         }
         candidate = format!("{base}-{index}");
@@ -549,17 +586,6 @@ pub(crate) fn provider_exists(conn: &SqliteConnection, provider_id: &str) -> Res
     Ok(count > 0)
 }
 
-fn provider_exists_for_tool(conn: &SqliteConnection, provider_id: &str, tool_type: &str) -> Result<bool> {
-    let count = conn
-        .query_one(
-            "SELECT COUNT(*) FROM providers WHERE id = ?1 AND tool_type = ?2",
-            &[SqlValue::Text(provider_id), SqlValue::Text(tool_type)],
-            |row| row.i64(0),
-        )?
-        .unwrap_or(0);
-    Ok(count > 0)
-}
-
 pub(crate) fn get_active_tool(conn: &SqliteConnection) -> Result<ToolType> {
     let value = get_setting(conn, "active_tool")?;
     match value.as_deref() {
@@ -627,7 +653,7 @@ fn tool_setting_key(key: &str, tool_type: ToolType) -> String {
     format!("{}_{}", key, tool_type.as_str())
 }
 
-fn provider_belongs_to_tool(conn: &SqliteConnection, provider_id: &str, tool_type: ToolType) -> Result<bool> {
+pub(crate) fn provider_belongs_to_tool(conn: &SqliteConnection, provider_id: &str, tool_type: ToolType) -> Result<bool> {
     let count = conn
         .query_one(
             "SELECT COUNT(*) FROM providers WHERE id = ?1 AND tool_type = ?2",
@@ -958,6 +984,23 @@ mod tests {
     }
 
     #[test]
+    fn creates_provider_ids_unique_across_tools() -> Result<()> {
+        let config_path = temp_config_path("provider-id-tools");
+        let conn = open_database(&config_path)?;
+        insert_test_provider_for_tool(&conn, "openai", "OpenAI", ToolType::Codex)?;
+
+        assert_eq!(
+            next_provider_id(&conn, "OpenAI", "https://api.example.com/v1", None)?,
+            "openai-2"
+        );
+
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::remove_dir_all(parent);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn reorders_providers_for_the_active_tool() -> Result<()> {
         let config_path = temp_config_path("provider-order");
         let conn = open_database(&config_path)?;
@@ -971,7 +1014,7 @@ mod tests {
             &["gamma".to_string(), "alpha".to_string(), "beta".to_string()],
         )?;
 
-        let providers = collect_providers_from_database(&conn, &config_path, ToolType::Codex)?;
+        let providers = collect_providers_from_database(&conn, ToolType::Codex)?;
         let provider_ids = providers
             .into_iter()
             .map(|provider| provider.id)

@@ -179,6 +179,28 @@ pub(crate) fn normalize_base_url(input: &str) -> String {
     }
 }
 
+pub(crate) fn normalize_model_list_base_url(input: &str) -> String {
+    let mut url = input.trim().trim_end_matches('/').to_string();
+    if url.is_empty() {
+        return String::new();
+    }
+
+    for suffix in [
+        "/v1/messages/count_tokens",
+        "/v1/messages",
+        "/v1/models",
+        "/models",
+    ] {
+        if url.ends_with(suffix) {
+            let next_len = url.len() - suffix.len();
+            url.truncate(next_len);
+            break;
+        }
+    }
+
+    normalize_base_url(&url)
+}
+
 pub(crate) fn parse_model_ids(body: &Value) -> Vec<String> {
     let mut models = Vec::new();
     let mut seen = HashSet::new();
@@ -265,6 +287,30 @@ mod tests {
         );
         assert_eq!(normalize_base_url("  https://api.example.com/  "), "https://api.example.com/v1");
         assert_eq!(normalize_base_url(""), "");
+    }
+
+    #[test]
+    fn normalizes_model_list_base_urls_for_shared_fetch() {
+        assert_eq!(
+            normalize_model_list_base_url("https://api.example.com"),
+            "https://api.example.com/v1"
+        );
+        assert_eq!(
+            normalize_model_list_base_url("https://api.example.com/v1"),
+            "https://api.example.com/v1"
+        );
+        assert_eq!(
+            normalize_model_list_base_url("https://api.example.com/v1/models"),
+            "https://api.example.com/v1"
+        );
+        assert_eq!(
+            normalize_model_list_base_url("https://api.example.com/v1/messages"),
+            "https://api.example.com/v1"
+        );
+        assert_eq!(
+            normalize_model_list_base_url("https://api.example.com/v1/messages/count_tokens"),
+            "https://api.example.com/v1"
+        );
     }
 
     #[test]

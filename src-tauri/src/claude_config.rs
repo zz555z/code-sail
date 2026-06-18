@@ -12,7 +12,6 @@ use crate::storage::{
 };
 
 const CLAUDE_SETTINGS_SCHEMA: &str = "https://json.schemastore.org/claude-code-settings.json";
-pub(crate) const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 const ANTHROPIC_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 const ANTHROPIC_AUTH_TOKEN_ENV: &str = "ANTHROPIC_AUTH_TOKEN";

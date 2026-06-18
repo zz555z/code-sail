@@ -22,6 +22,7 @@ import type { ProviderView, ToolType } from "../lib/types";
 type ToolIconProps = SVGProps<SVGSVGElement> & { title?: string };
 type DragOverPlacement = "before" | "after";
 type DragOverTarget = { providerId: string; placement: DragOverPlacement } | null;
+type DragRowRect = { providerId: string; top: number; midpoint: number };
 
 function CodexLogoIcon({ title, ...props }: ToolIconProps) {
   return (
@@ -82,6 +83,7 @@ export function ModelsPage() {
   const providersRef = useRef<ProviderView[]>([]);
   const draggingProviderIdRef = useRef<string | null>(null);
   const dragOverTargetRef = useRef<DragOverTarget>(null);
+  const dragRowRectsRef = useRef<DragRowRect[]>([]);
   const canDragProvidersRef = useRef(false);
   const {
     state,
@@ -193,23 +195,31 @@ export function ModelsPage() {
 
   function dragTargetFromClientY(clientY: number): DragOverTarget {
     const sourceId = draggingProviderIdRef.current;
-    const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-provider-row-id]"));
+    const rows = dragRowRectsRef.current;
     if (!rows.length) return null;
 
     for (const row of rows) {
-      const providerId = row.dataset.providerRowId;
-      if (!providerId) continue;
-
-      const rect = row.getBoundingClientRect();
-      if (clientY <= rect.top + rect.height / 2) {
-        return providerId === sourceId ? null : { providerId, placement: "before" };
+      if (clientY <= row.midpoint) {
+        return row.providerId === sourceId ? null : { providerId: row.providerId, placement: "before" };
       }
     }
 
-    const lastProviderId = rows[rows.length - 1]?.dataset.providerRowId;
-    return lastProviderId && lastProviderId !== sourceId
+    const lastProviderId = rows[rows.length - 1]?.providerId;
+    return lastProviderId !== sourceId
       ? { providerId: lastProviderId, placement: "after" }
       : null;
+  }
+
+  function cacheDragRowRects() {
+    dragRowRectsRef.current = Array.from(document.querySelectorAll<HTMLElement>("[data-provider-row-id]"))
+      .map((row) => {
+        const providerId = row.dataset.providerRowId;
+        if (!providerId) return null;
+        const rect = row.getBoundingClientRect();
+        return { providerId, top: rect.top, midpoint: rect.top + rect.height / 2 };
+      })
+      .filter((row): row is DragRowRect => Boolean(row))
+      .sort((left, right) => left.top - right.top);
   }
 
   function updateDragTarget(clientY: number) {
@@ -228,6 +238,7 @@ export function ModelsPage() {
 
     draggingProviderIdRef.current = null;
     dragOverTargetRef.current = null;
+    dragRowRectsRef.current = [];
     setDraggingProviderId(null);
     setDragOverTarget(null);
 
@@ -248,6 +259,7 @@ export function ModelsPage() {
 
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    cacheDragRowRects();
     draggingProviderIdRef.current = providerId;
     setDraggingProviderId(providerId);
     setDragOverTarget(null);
@@ -446,7 +458,7 @@ export function ModelsPage() {
                   }
                   healthStatus={healthCheckResults[provider.id]}
                   onPointerDown={(event) => handleProviderPointerDown(event, provider.id)}
-                  onEdit={() => openEditProvider(provider)}
+                  onEdit={() => void openEditProvider(provider)}
                   onCopy={() => void copyProvider(provider.id)}
                   onSetCurrent={() => void setCurrentProvider(provider)}
                   onHealthCheck={() => void healthCheckProvider(provider)}

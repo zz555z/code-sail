@@ -9,9 +9,12 @@ export type ProviderView = {
   baseUrl: string | null;
   model: string | null;
   models: string[];
-  token: string | null;
   tokenPresent: boolean;
   toolType: ToolType;
+};
+
+export type ProviderDetail = ProviderView & {
+  token: string | null;
 };
 
 export type AppState = {

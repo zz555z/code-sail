@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  checkProviderHealth,
   copyProvider as copyProviderCommand,
   deleteProvider,
   fetchModels,
   getAppState,
+  getProviderDetail,
   importCodexProvidersToClaude,
   reorderProviders as reorderProvidersCommand,
   restartCodexApp,
   saveProvider,
   setCurrentModel as setCurrentModelCommand
 } from "../lib/api";
-import { comparableDraft, comparableProvider, draftFromProvider, emptyDraft } from "../lib/providerDraft";
-import type { AppState, HealthCheckResponse, ProviderDraft, ProviderView } from "../lib/types";
-
-type HealthStatus = HealthCheckResponse | "loading";
+import { comparableDraft, draftFromProvider, emptyDraft } from "../lib/providerDraft";
+import type { AppState, ProviderDraft, ProviderView } from "../lib/types";
+import { useProviderHealth } from "./useProviderHealth";
 
 type UseProviderEditorOptions = {
   setMessage: (message: string) => void;
@@ -35,9 +34,11 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [tokenVisible, setTokenVisible] = useState(false);
   const [updateConfigFile, setUpdateConfigFile] = useState(true);
-  const [healthCheckResults, setHealthCheckResults] = useState<Record<string, HealthStatus>>({});
-  const healthTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const draftRef = useRef<ProviderDraft>({ ...emptyDraft });
+  const cleanDraftRef = useRef<ProviderDraft>({ ...emptyDraft });
+  const modelValueRef = useRef("");
   const modelComboboxRef = useRef<HTMLDivElement>(null);
+  const { healthCheckResults, healthCheckProvider } = useProviderHealth({ setMessage });
 
   async function refresh(options?: { preferredId?: string | null }) {
     let next: AppState;
@@ -60,9 +61,14 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
 
     setSelectedId(nextSelected);
     const provider = next.providers.find((item) => item.id === nextSelected) || null;
-    setDraft(draftFromProvider(provider));
+    const nextDraft = draftFromProvider(provider);
+    const nextModelValue = provider?.model || (provider?.id === next.activeProvider ? next.activeModel ?? "" : "");
+    draftRef.current = nextDraft;
+    cleanDraftRef.current = nextDraft;
+    modelValueRef.current = nextModelValue;
+    setDraft(nextDraft);
     setModels(provider?.models ?? []);
-    setModelValue(provider?.model || (provider?.id === next.activeProvider ? next.activeModel ?? "" : ""));
+    setModelValue(nextModelValue);
   }
 
   useEffect(() => {
@@ -91,22 +97,27 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   );
 
   const isDirty = useMemo(() => {
-    if (draft.token.trim()) return true;
-    if (!selected) {
-      const current = comparableDraft(draft);
-      return Boolean(current.name || current.baseUrl || current.model);
-    }
-    return JSON.stringify(comparableDraft(draft)) !== JSON.stringify(comparableProvider(selected));
-  }, [draft, selected]);
+    const current = comparableDraft(draft);
+    return JSON.stringify(current) !== JSON.stringify(comparableDraft(cleanDraftRef.current));
+  }, [draft]);
 
   const canSave = isDirty || updateConfigFile;
 
   function updateDraft(patch: Partial<ProviderDraft>) {
-    setDraft((current) => ({ ...current, ...patch }));
+    setDraft((current) => {
+      const next = { ...current, ...patch };
+      draftRef.current = next;
+      return next;
+    });
+  }
+
+  function updateModelValue(model: string) {
+    modelValueRef.current = model;
+    setModelValue(model);
   }
 
   function selectModel(model: string) {
-    setModelValue(model);
+    updateModelValue(model);
     updateDraft({ model });
     setModelMenuOpen(false);
     if (document.activeElement instanceof HTMLElement) {
@@ -115,8 +126,12 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   }
 
   function openCreateProvider() {
+    const nextDraft = { ...emptyDraft, toolType: state?.activeTool ?? "codex" };
     setSelectedId(null);
-    setDraft({ ...emptyDraft, toolType: state?.activeTool ?? "codex" });
+    draftRef.current = nextDraft;
+    cleanDraftRef.current = nextDraft;
+    modelValueRef.current = "";
+    setDraft(nextDraft);
     setModels([]);
     setModelMenuOpen(false);
     setModelValue("");
@@ -125,15 +140,28 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     setEditorOpen(true);
   }
 
-  function openEditProvider(provider: ProviderView) {
-    setSelectedId(provider.id);
-    setDraft(draftFromProvider(provider));
-    setModels(provider.models ?? []);
-    setModelMenuOpen(false);
-    setModelValue(provider.model || (provider.id === state?.activeProvider ? state?.activeModel ?? "" : ""));
-    setTokenVisible(false);
+  async function openEditProvider(provider: ProviderView) {
+    setBusy(true);
     setMessage("");
-    setEditorOpen(true);
+    try {
+      const detail = await getProviderDetail(provider.id);
+      const nextDraft = draftFromProvider(detail);
+      const nextModelValue = detail.model || (detail.id === state?.activeProvider ? state?.activeModel ?? "" : "");
+      setSelectedId(detail.id);
+      draftRef.current = nextDraft;
+      cleanDraftRef.current = nextDraft;
+      modelValueRef.current = nextModelValue;
+      setDraft(nextDraft);
+      setModels(detail.models ?? []);
+      setModelMenuOpen(false);
+      setModelValue(nextModelValue);
+      setTokenVisible(false);
+      setEditorOpen(true);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function closeEditor() {
@@ -151,7 +179,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       const result = await copyProviderCommand(providerId);
       setModels([]);
       setModelMenuOpen(false);
-      setModelValue("");
+      updateModelValue("");
       setEditorOpen(false);
       await refresh({ preferredId: result.providerId });
       setMessage(`已复制为 ${result.providerId}。`);
@@ -191,7 +219,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setModelMenuOpen(false);
       if (selectedId === providerId) {
         setEditorOpen(false);
-        setModelValue("");
+        updateModelValue("");
       }
       await refresh({ preferredId: null });
       setMessage(`已删除 ${providerId}。`);
@@ -244,7 +272,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setMessage("请先为该配置填写 Model。");
       return;
     }
-    if (updateConfigFile && !provider.tokenPresent && !provider.token?.trim()) {
+    if (updateConfigFile && !provider.tokenPresent) {
       setMessage("请先为该配置填写 Token。");
       return;
     }
@@ -252,11 +280,23 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     setBusy(true);
     setMessage("");
     try {
-      await setCurrentModelCommand(provider.id, model, provider.token || "", updateConfigFile);
+      await setCurrentModelCommand(provider.id, model, "", updateConfigFile);
       setEditorOpen(false);
       setModels([]);
       setModelMenuOpen(false);
-      await refresh({ preferredId: provider.id });
+      setSelectedId(provider.id);
+      setState((current) =>
+        current
+          ? {
+              ...current,
+              activeProvider: provider.id,
+              activeModel: model,
+              providers: current.providers.map((item) =>
+                item.id === provider.id ? { ...item, model } : item
+              )
+            }
+          : current
+      );
       setMessage(
         updateConfigFile
           ? `已设置 ${provider.name || provider.id} 为当前模型，并更新配置文件。`
@@ -270,9 +310,9 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   }
 
   async function saveCurrentProvider() {
-    const baseUrl = draft.baseUrl.trim();
-    const model = modelValue.trim();
-    const draftToSave: ProviderDraft = { ...draft, model };
+    const model = modelValueRef.current.trim();
+    const draftToSave: ProviderDraft = { ...draftRef.current, model };
+    const baseUrl = draftToSave.baseUrl.trim();
 
     if (!baseUrl) {
       setMessage("请先填写 Base URL。");
@@ -303,7 +343,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       if (savedProvider) {
-        await refresh({ preferredId: draft.originalId || null });
+        await refresh({ preferredId: draftRef.current.originalId || null });
         setEditorOpen(false);
         setModels([]);
         setModelMenuOpen(false);
@@ -317,9 +357,10 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   }
 
   async function fetchProviderModels() {
-    const baseUrl = draft.baseUrl.trim();
-    const token = draft.token.trim();
-    const canUseSavedToken = Boolean(selected?.tokenPresent && selected.id === draft.originalId);
+    const requestDraft = { ...draftRef.current, model: modelValueRef.current.trim() };
+    const baseUrl = requestDraft.baseUrl.trim();
+    const token = requestDraft.token.trim();
+    const canUseSavedToken = Boolean(selected?.tokenPresent && selected.id === requestDraft.originalId);
     if (!baseUrl) {
       setMessage("请先填写 Base URL。");
       return;
@@ -333,15 +374,49 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     setMessagePaused(true);
     setMessage("正在请求模型列表...");
     try {
-      const result = await fetchModels({ ...draft, model: modelValue.trim() });
-      const nextModel = modelValue.trim() || result.models[0] || "";
+      const result = await fetchModels(requestDraft);
+      const nextModel = requestDraft.model.trim();
+      const fetchedProviderId = result.providerId || requestDraft.originalId || null;
+      const knownProvider = Boolean(
+        fetchedProviderId && state?.providers.some((provider) => provider.id === fetchedProviderId)
+      );
       setModels(result.models);
-      setSelectedId(result.providerId);
-      setDraft((current) => ({ ...current, originalId: result.providerId, model: nextModel }));
-      setModelValue(nextModel);
+      if (fetchedProviderId) {
+        setSelectedId(fetchedProviderId);
+      }
+      setDraft((current) => ({
+        ...current,
+        originalId: fetchedProviderId || current.originalId,
+        model: nextModel
+      }));
+      draftRef.current = {
+        ...draftRef.current,
+        originalId: fetchedProviderId || draftRef.current.originalId,
+        model: nextModel
+      };
+      updateModelValue(nextModel);
       setModelMenuOpen(result.models.length > 0);
-      setState(await getAppState());
-      setMessage(`已获取并保存 ${result.models.length} 个模型，可在下拉框选择。`);
+      if (knownProvider) {
+        setState((current) =>
+          current
+            ? {
+                ...current,
+                providers: current.providers.map((provider) =>
+                  provider.id === fetchedProviderId
+                    ? { ...provider, models: result.models }
+                    : provider
+                )
+              }
+            : current
+        );
+      } else if (fetchedProviderId) {
+        await refresh({ preferredId: fetchedProviderId });
+      }
+      setMessage(
+        fetchedProviderId
+          ? `已获取并保存 ${result.models.length} 个模型，可在下拉框选择。`
+          : `已获取 ${result.models.length} 个模型，可在下拉框选择。`
+      );
     } catch (error) {
       setModels([]);
       setModelMenuOpen(false);
@@ -362,58 +437,6 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setRestarting(false);
-    }
-  }
-
-  async function healthCheckProvider(provider: ProviderView) {
-    const baseUrl = (provider.baseUrl || "").trim();
-    if (!baseUrl) {
-      setMessage("该配置没有 Base URL。");
-      return;
-    }
-
-    setHealthCheckResults((prev) => ({ ...prev, [provider.id]: "loading" }));
-
-    // Clear any existing auto-clear timer for this provider
-    const existingTimer = healthTimersRef.current.get(provider.id);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-      healthTimersRef.current.delete(provider.id);
-    }
-
-    try {
-      const result = await checkProviderHealth(
-        baseUrl,
-        provider.token || "",
-        provider.model || "",
-        provider.toolType
-      );
-      setHealthCheckResults((prev) => ({ ...prev, [provider.id]: result }));
-
-      if (result.available) {
-        setMessage(`${provider.name || provider.id} 可用，延迟 ${result.latencyMs}ms。`);
-      } else {
-        const detail = result.error ? `: ${result.error}` : "";
-        setMessage(`${provider.name || provider.id} 不可用${detail}`);
-      }
-
-      // Auto-clear result after 5 seconds
-      const timer = setTimeout(() => {
-        setHealthCheckResults((prev) => {
-          const next = { ...prev };
-          delete next[provider.id];
-          return next;
-        });
-        healthTimersRef.current.delete(provider.id);
-      }, 5000);
-      healthTimersRef.current.set(provider.id, timer);
-    } catch (error) {
-      setHealthCheckResults((prev) => {
-        const next = { ...prev };
-        delete next[provider.id];
-        return next;
-      });
-      setMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -438,7 +461,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     modelComboboxRef,
     setUpdateConfigFile,
     setModelMenuOpen,
-    setModelValue,
+    setModelValue: updateModelValue,
     toggleTokenVisible: () => setTokenVisible((visible) => !visible),
     refresh,
     restartCodex,

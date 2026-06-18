@@ -9,6 +9,7 @@ import type {
   HistoryConversation,
   HistoryProviderGroup,
   ImportProvidersResponse,
+  ProviderDetail,
   ProviderDraft,
   SaveProviderResponse,
   ToolStatus,
@@ -49,6 +50,10 @@ export async function saveProvider(provider: ProviderDraft, updateConfig: boolea
   });
 }
 
+export async function getProviderDetail(providerId: string): Promise<ProviderDetail> {
+  return await invokeCommand<ProviderDetail>("get_provider_detail", { providerId });
+}
+
 export async function copyProvider(providerId: string): Promise<CopyProviderResponse> {
   return await invokeCommand<CopyProviderResponse>("copy_provider", { providerId });
 }
@@ -69,9 +74,7 @@ export async function fetchModels(provider: ProviderDraft): Promise<FetchModelsR
   return await invokeCommand<FetchModelsResponse>("fetch_models", {
     input: {
       originalId: provider.originalId,
-      name: provider.name,
       baseUrl: provider.baseUrl,
-      model: provider.model,
       token: provider.token || null,
       toolType: provider.toolType
     }
@@ -80,12 +83,10 @@ export async function fetchModels(provider: ProviderDraft): Promise<FetchModelsR
 
 export async function checkProviderHealth(
   baseUrl: string,
-  token: string,
-  model: string,
-  toolType: ToolType
+  providerId: string
 ): Promise<HealthCheckResponse> {
   return await invokeCommand<HealthCheckResponse>("check_provider_health", {
-    input: { baseUrl, token, model, toolType }
+    input: { baseUrl, providerId }
   });
 }
 

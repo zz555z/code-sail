@@ -152,10 +152,21 @@ fn list_history_sessions_inner() -> Result<Vec<HistoryProviderGroup>> {
     collect_session_files(&root, &mut session_files)?;
     prune_summary_cache(&session_files);
 
-    let mut all_sessions: Vec<HistorySessionSummary> = session_files
-        .iter()
-        .filter_map(|f| summarize_session_file_cached(f).transpose())
-        .collect::<Result<Vec<_>>>()?;
+    session_files.sort_by(|left, right| {
+        file_modified_millis(right)
+            .cmp(&file_modified_millis(left))
+            .then_with(|| left.cmp(right))
+    });
+
+    let mut all_sessions = Vec::<HistorySessionSummary>::new();
+    for session_file in &session_files {
+        if let Some(summary) = summarize_session_file_cached(session_file)? {
+            all_sessions.push(summary);
+            if all_sessions.len() >= MAX_SESSIONS {
+                break;
+            }
+        }
+    }
 
     all_sessions.sort_by(|left, right| {
         right
@@ -164,8 +175,6 @@ fn list_history_sessions_inner() -> Result<Vec<HistoryProviderGroup>> {
             .cmp(&left.timestamp.unwrap_or_default())
             .then_with(|| left.title.to_lowercase().cmp(&right.title.to_lowercase()))
     });
-
-    all_sessions.truncate(MAX_SESSIONS);
 
     let mut groups = BTreeMap::<String, Vec<HistorySessionSummary>>::new();
     for summary in all_sessions {
@@ -228,6 +237,14 @@ fn summarize_session_file_cached(session_file: &Path) -> Result<Option<HistorySe
 fn system_time_millis(time: SystemTime) -> u128 {
     time.duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
+        .unwrap_or_default()
+}
+
+fn file_modified_millis(path: &Path) -> u128 {
+    fs::metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .map(system_time_millis)
         .unwrap_or_default()
 }
 

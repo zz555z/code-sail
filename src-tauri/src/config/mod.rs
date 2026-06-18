@@ -6,8 +6,8 @@ mod update;
 pub use health::check_provider_health;
 pub use models::fetch_models;
 pub use providers::{
-    copy_provider, delete_provider, import_codex_providers_to_claude, reorder_providers,
-    save_provider, set_current_model,
+    copy_provider, delete_provider, get_provider_detail, import_codex_providers_to_claude,
+    reorder_providers, save_provider, set_current_model,
 };
 pub use update::{check_app_update, open_app_update};
 
@@ -119,7 +119,7 @@ fn load_app_state() -> Result<AppState> {
         config_exists,
         active_provider: get_active_provider(&conn, active_tool)?,
         active_model: get_active_model(&conn, active_tool)?,
-        providers: collect_providers_from_database(&conn, &config_path, active_tool)?,
+        providers: collect_providers_from_database(&conn, active_tool)?,
         active_tool,
     })
 }

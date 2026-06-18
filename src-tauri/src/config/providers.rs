@@ -6,7 +6,7 @@ use crate::claude_config::sync_claude_settings;
 use crate::codex_config::{codex_config_path, normalize_base_url, sync_codex_files};
 use crate::storage::{
     bool_to_i64, copy_provider_models, delete_active_settings, encrypt_optional_token,
-    get_active_provider, get_active_tool, get_provider, get_provider_token,
+    get_active_provider, get_active_tool, get_provider, get_provider_models, get_provider_token,
     list_stored_providers, next_copy_id, next_copy_name, next_provider_id,
     next_provider_position, open_database, optional_non_empty, provider_exists,
     reorder_provider_positions, set_active_model, set_active_provider, with_transaction,
@@ -30,6 +30,19 @@ pub struct ProviderInput {
 #[serde(rename_all = "camelCase")]
 pub struct SaveProviderResponse {
     pub provider_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderDetail {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: Option<String>,
+    pub models: Vec<String>,
+    pub token: Option<String>,
+    pub token_present: bool,
+    pub tool_type: ToolType,
 }
 
 #[derive(Debug, Serialize)]
@@ -58,6 +71,15 @@ pub async fn save_provider(input: ProviderInput) -> Result<SaveProviderResponse,
     run_background_task("codex-save-provider", move || save_provider_inner(input))
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn get_provider_detail(provider_id: String) -> Result<ProviderDetail, String> {
+    run_background_task("codex-get-provider-detail", move || {
+        get_provider_detail_inner(&provider_id)
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -115,7 +137,7 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     let provider_id = if !original_id.is_empty() && provider_exists(&conn, original_id)? {
         original_id.to_string()
     } else {
-        next_provider_id(&conn, name, base_url, None, tool_type)?
+        next_provider_id(&conn, name, base_url, None)?
     };
     let explicit_token = input
         .token
@@ -184,6 +206,34 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     }
     Ok(SaveProviderResponse {
         provider_id,
+    })
+}
+
+fn get_provider_detail_inner(provider_id: &str) -> Result<ProviderDetail> {
+    let provider_id = provider_id.trim();
+    if provider_id.is_empty() {
+        bail!("Provider ID 不能为空");
+    }
+
+    let config_path = codex_config_path()?;
+    let conn = open_database(&config_path)?;
+    let provider = get_provider(&conn, &config_path, provider_id)?
+        .with_context(|| format!("未找到 provider: {provider_id}"))?;
+    let models = get_provider_models(&conn, provider_id)?;
+    let token_present = provider
+        .token
+        .as_deref()
+        .is_some_and(|token| !token.trim().is_empty());
+
+    Ok(ProviderDetail {
+        id: provider.id,
+        name: provider.name,
+        base_url: provider.base_url,
+        model: provider.model,
+        models,
+        token: provider.token,
+        token_present,
+        tool_type: provider.tool_type,
     })
 }
 

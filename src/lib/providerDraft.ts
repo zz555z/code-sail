@@ -1,4 +1,4 @@
-import type { ProviderDraft, ProviderView, ToolType } from "./types";
+import type { ProviderDetail, ProviderDraft, ProviderView, ToolType } from "./types";
 
 export const emptyDraft: ProviderDraft = {
   originalId: null,
@@ -9,14 +9,14 @@ export const emptyDraft: ProviderDraft = {
   toolType: "codex"
 };
 
-export function draftFromProvider(provider: ProviderView | null): ProviderDraft {
+export function draftFromProvider(provider: ProviderView | ProviderDetail | null): ProviderDraft {
   if (!provider) return { ...emptyDraft };
   return {
     originalId: provider.id,
     name: provider.name || provider.id,
     baseUrl: provider.baseUrl || "",
     model: provider.model || "",
-    token: provider.token || "",
+    token: "token" in provider ? provider.token || "" : "",
     toolType: provider.toolType
   };
 }
@@ -27,14 +27,5 @@ export function comparableDraft(draft: ProviderDraft) {
     baseUrl: draft.baseUrl.trim(),
     model: draft.model.trim(),
     token: draft.token.trim()
-  };
-}
-
-export function comparableProvider(provider: ProviderView) {
-  return {
-    name: provider.name || provider.id,
-    baseUrl: provider.baseUrl || "",
-    model: provider.model || "",
-    token: provider.token || ""
   };
 }
