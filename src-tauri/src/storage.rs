@@ -149,6 +149,14 @@ fn initialize_database_once(
     if !table_has_column(conn, "providers", "position")? {
         conn.execute_batch("ALTER TABLE providers ADD COLUMN position INTEGER NOT NULL DEFAULT 0;")?;
     }
+    conn.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_providers_tool_position
+            ON providers (tool_type, position, name, id);
+        CREATE INDEX IF NOT EXISTS idx_provider_models_provider_position
+            ON provider_models (provider_id, position, model);
+        "#,
+    )?;
     normalize_provider_positions(conn)?;
     encrypt_plaintext_tokens(conn, config_path)?;
     restrict_file_permissions(db_path)?;

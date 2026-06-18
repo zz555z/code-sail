@@ -9,8 +9,8 @@ use crate::storage::{
     get_active_provider, get_active_tool, get_provider, get_provider_models, get_provider_token,
     list_stored_providers, next_copy_id, next_copy_name, next_provider_id,
     next_provider_position, open_database, optional_non_empty, provider_exists,
-    reorder_provider_positions, set_active_model, set_active_provider, with_transaction,
-    SqliteConnection, SqlValue, ToolType,
+    provider_belongs_to_tool, reorder_provider_positions, set_active_model, set_active_provider,
+    with_transaction, SqliteConnection, SqlValue, ToolType,
 };
 use crate::tasks::run_background_task;
 
@@ -134,7 +134,9 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     let config_path = codex_config_path()?;
     let conn = open_database(&config_path)?;
     let original_id = input.original_id.as_deref().map(str::trim).unwrap_or_default();
-    let provider_id = if !original_id.is_empty() && provider_exists(&conn, original_id)? {
+    let updates_existing_provider =
+        !original_id.is_empty() && provider_belongs_to_tool(&conn, original_id, tool_type)?;
+    let provider_id = if updates_existing_provider {
         original_id.to_string()
     } else {
         next_provider_id(&conn, name, base_url, None)?
@@ -146,7 +148,7 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
         .filter(|token| !token.is_empty())
         .map(ToString::to_string);
     let existing_token = if explicit_token.is_none() {
-        if !original_id.is_empty() {
+        if updates_existing_provider {
             get_provider_token(&conn, &config_path, original_id)?
         } else {
             get_provider_token(&conn, &config_path, &provider_id)?
@@ -162,7 +164,11 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     };
     let provider_name = if name.is_empty() { provider_id.as_str() } else { name };
     let tool_type_str = tool_type.as_str();
-    let position = next_provider_position(&conn, tool_type)?;
+    let position = if updates_existing_provider {
+        0
+    } else {
+        next_provider_position(&conn, tool_type)?
+    };
 
     with_transaction(&conn, |conn| {
         if !original_id.is_empty() && original_id != provider_id {
