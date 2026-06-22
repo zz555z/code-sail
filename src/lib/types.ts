@@ -18,8 +18,6 @@ export type ProviderDetail = ProviderView & {
 };
 
 export type AppState = {
-  configPath: string;
-  configExists: boolean;
   activeProvider: string | null;
   activeModel: string | null;
   providers: ProviderView[];
@@ -79,6 +77,8 @@ export type HealthCheckResponse = {
   statusCode: number | null;
   error: string | null;
 };
+
+export type HealthStatus = HealthCheckResponse | "loading";
 
 export type HistoryMessage = {
   role: string;

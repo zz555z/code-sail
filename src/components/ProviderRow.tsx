@@ -1,8 +1,6 @@
 import { memo, type PointerEvent } from "react";
 import { Copy, HeartPulse, Loader2, MousePointerClick, Pencil, Trash2 } from "lucide-react";
-import type { HealthCheckResponse, ProviderView } from "../lib/types";
-
-type HealthStatus = HealthCheckResponse | "loading";
+import type { HealthStatus, ProviderView } from "../lib/types";
 type DragOverPlacement = "before" | "after";
 
 type ProviderRowProps = {

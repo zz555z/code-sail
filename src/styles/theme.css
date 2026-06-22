@@ -20,7 +20,6 @@
 }
 
 :root[data-theme="dark"] .row-button,
-:root[data-theme="dark"] .config-drag-handle,
 :root[data-theme="dark"] .overview-status-card,
 :root[data-theme="dark"] .tool-status-row,
 :root[data-theme="dark"] .history-summary-grid article,
@@ -47,11 +46,6 @@
   background:
     linear-gradient(135deg, rgba(32, 56, 48, 0.74), rgba(24, 38, 33, 0.34) 62%),
     radial-gradient(circle at 14% 0%, rgba(80, 138, 118, 0.22), transparent 42%);
-}
-
-:root[data-theme="dark"] .config-drag-handle:hover:not(:disabled),
-:root[data-theme="dark"] .config-drag-handle:focus-visible {
-  background: var(--mint);
 }
 
 :root[data-theme="dark"] .overview-hero {
@@ -87,7 +81,6 @@
   color: #6f837b;
 }
 
-:root[data-theme="dark"] .config-sync-switch,
-:root[data-theme="dark"] .provider-beacon span {
+:root[data-theme="dark"] .config-sync-switch {
   background: #334a42;
 }

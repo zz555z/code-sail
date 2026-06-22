@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   copyProvider as copyProviderCommand,
   deleteProvider,
@@ -13,6 +13,7 @@ import {
 } from "../lib/api";
 import { comparableDraft, draftFromProvider, emptyDraft } from "../lib/providerDraft";
 import type { AppState, ProviderDraft, ProviderView } from "../lib/types";
+import { errorMessage } from "../lib/utils";
 import { useProviderHealth } from "./useProviderHealth";
 
 type UseProviderEditorOptions = {
@@ -38,14 +39,21 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   const cleanDraftRef = useRef<ProviderDraft>({ ...emptyDraft });
   const modelValueRef = useRef("");
   const modelComboboxRef = useRef<HTMLDivElement>(null);
+  const selectedIdRef = useRef(selectedId);
+  const stateRef = useRef(state);
+  const updateConfigFileRef = useRef(updateConfigFile);
+  const selectedRef = useRef<ProviderView | null>(null);
+  selectedIdRef.current = selectedId;
+  stateRef.current = state;
+  updateConfigFileRef.current = updateConfigFile;
   const { healthCheckResults, healthCheckProvider } = useProviderHealth({ setMessage });
 
-  async function refresh(options?: { preferredId?: string | null }) {
+  const refresh = useCallback(async (options?: { preferredId?: string | null }) => {
     let next: AppState;
     try {
       next = await getAppState();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
       return;
     }
     setState(next);
@@ -53,7 +61,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     const hasPreferredId = Object.prototype.hasOwnProperty.call(options || {}, "preferredId");
     const desiredId = hasPreferredId
       ? options?.preferredId
-      : selectedId ?? next.activeProvider ?? next.providers[0]?.id ?? null;
+      : selectedIdRef.current ?? next.activeProvider ?? next.providers[0]?.id ?? null;
     const nextSelected =
       desiredId && next.providers.some((provider) => provider.id === desiredId)
         ? desiredId
@@ -69,7 +77,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     setDraft(nextDraft);
     setModels(provider?.models ?? []);
     setModelValue(nextModelValue);
-  }
+  }, [setMessage]);
 
   useEffect(() => {
     if (!modelMenuOpen) return;
@@ -87,7 +95,9 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
 
   const selected = useMemo(() => {
     if (!state) return null;
-    return state.providers.find((provider) => provider.id === selectedId) || null;
+    const found = state.providers.find((provider) => provider.id === selectedId) || null;
+    selectedRef.current = found;
+    return found;
   }, [selectedId, state]);
 
   const providerCount = state?.providers.length ?? 0;
@@ -103,30 +113,34 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
 
   const canSave = isDirty || updateConfigFile;
 
-  function updateDraft(patch: Partial<ProviderDraft>) {
+  const updateDraft = useCallback((patch: Partial<ProviderDraft>) => {
     setDraft((current) => {
       const next = { ...current, ...patch };
       draftRef.current = next;
       return next;
     });
-  }
+  }, []);
 
-  function updateModelValue(model: string) {
+  const updateModelValue = useCallback((model: string) => {
     modelValueRef.current = model;
     setModelValue(model);
-  }
+  }, []);
 
-  function selectModel(model: string) {
+  const selectModel = useCallback((model: string) => {
     updateModelValue(model);
-    updateDraft({ model });
+    setDraft((current) => {
+      const next = { ...current, model };
+      draftRef.current = next;
+      return next;
+    });
     setModelMenuOpen(false);
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
-  }
+  }, [updateModelValue]);
 
-  function openCreateProvider() {
-    const nextDraft = { ...emptyDraft, toolType: state?.activeTool ?? "codex" };
+  const openCreateProvider = useCallback(() => {
+    const nextDraft = { ...emptyDraft, toolType: stateRef.current?.activeTool ?? "codex" };
     setSelectedId(null);
     draftRef.current = nextDraft;
     cleanDraftRef.current = nextDraft;
@@ -138,15 +152,16 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     setTokenVisible(false);
     setMessage("");
     setEditorOpen(true);
-  }
+  }, [setMessage]);
 
-  async function openEditProvider(provider: ProviderView) {
+  const openEditProvider = useCallback(async (provider: ProviderView) => {
     setBusy(true);
     setMessage("");
     try {
       const detail = await getProviderDetail(provider.id);
       const nextDraft = draftFromProvider(detail);
-      const nextModelValue = detail.model || (detail.id === state?.activeProvider ? state?.activeModel ?? "" : "");
+      const currentState = stateRef.current;
+      const nextModelValue = detail.model || (detail.id === currentState?.activeProvider ? currentState?.activeModel ?? "" : "");
       setSelectedId(detail.id);
       draftRef.current = nextDraft;
       cleanDraftRef.current = nextDraft;
@@ -158,39 +173,40 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setTokenVisible(false);
       setEditorOpen(true);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setBusy(false);
     }
-  }
+  }, [setMessage]);
 
-  function closeEditor() {
+  const closeEditor = useCallback(() => {
     setEditorOpen(false);
     setModels([]);
     setModelMenuOpen(false);
     setTokenVisible(false);
     setMessage("");
-  }
+  }, [setMessage]);
 
-  async function copyProvider(providerId: string) {
+  const copyProvider = useCallback(async (providerId: string) => {
     setBusy(true);
     setMessage("");
     try {
       const result = await copyProviderCommand(providerId);
       setModels([]);
       setModelMenuOpen(false);
-      updateModelValue("");
+      modelValueRef.current = "";
+      setModelValue("");
       setEditorOpen(false);
       await refresh({ preferredId: result.providerId });
       setMessage(`已复制为 ${result.providerId}。`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setBusy(false);
     }
-  }
+  }, [setMessage, refresh]);
 
-  async function importFromCodexToClaude() {
+  const importFromCodexToClaude = useCallback(async () => {
     setImportingProviders(true);
     setBusy(true);
     setMessage("");
@@ -203,76 +219,79 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
           : "没有可导入的 codex 配置。"
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setImportingProviders(false);
       setBusy(false);
     }
-  }
+  }, [setMessage, refresh]);
 
-  async function removeProvider(providerId: string) {
+  const removeProvider = useCallback(async (providerId: string) => {
     setBusy(true);
     setMessage("");
     try {
       await deleteProvider(providerId);
       setModels([]);
       setModelMenuOpen(false);
-      if (selectedId === providerId) {
+      if (selectedIdRef.current === providerId) {
         setEditorOpen(false);
-        updateModelValue("");
+        modelValueRef.current = "";
+        setModelValue("");
       }
       await refresh({ preferredId: null });
       setMessage(`已删除 ${providerId}。`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setBusy(false);
     }
-  }
+  }, [setMessage, refresh]);
 
-  async function reorderProviders(providerIds: string[]) {
-    if (!state) return;
+  const reorderProviders = useCallback(async (providerIds: string[]) => {
+    const currentState = stateRef.current;
+    if (!currentState) return;
 
-    const currentIds = state.providers.map((provider) => provider.id);
+    const currentIds = currentState.providers.map((provider) => provider.id);
     const sameOrder =
       providerIds.length === currentIds.length &&
       providerIds.every((providerId, index) => providerId === currentIds[index]);
     if (sameOrder) return;
 
-    const providerMap = new Map(state.providers.map((provider) => [provider.id, provider]));
+    const providerMap = new Map(currentState.providers.map((provider) => [provider.id, provider]));
     const nextProviders = providerIds
       .map((providerId) => providerMap.get(providerId))
       .filter((provider): provider is ProviderView => Boolean(provider));
 
-    if (nextProviders.length !== state.providers.length) {
+    if (nextProviders.length !== currentState.providers.length) {
       setMessage("配置列表已变化，请刷新后再排序。");
       return;
     }
 
-    const previousState = state;
+    const previousState = currentState;
     setBusy(true);
     setMessage("");
-    setState({ ...state, providers: nextProviders });
+    setState({ ...currentState, providers: nextProviders });
 
     try {
       await reorderProvidersCommand(providerIds);
       setMessage("已更新配置顺序。");
     } catch (error) {
       setState(previousState);
-      await refresh({ preferredId: selectedId });
-      setMessage(error instanceof Error ? error.message : String(error));
+      await refresh({ preferredId: selectedIdRef.current });
+      setMessage(errorMessage(error));
     } finally {
       setBusy(false);
     }
-  }
+  }, [setMessage, refresh]);
 
-  async function setCurrentProvider(provider: ProviderView) {
+  const setCurrentProvider = useCallback(async (provider: ProviderView) => {
     const model = (provider.model || "").trim();
     if (!model) {
       setMessage("请先为该配置填写 Model。");
       return;
     }
-    if (updateConfigFile && !provider.tokenPresent) {
+    const shouldUpdateConfig = updateConfigFileRef.current;
+    if (shouldUpdateConfig && !provider.tokenPresent) {
       setMessage("请先为该配置填写 Token。");
       return;
     }
@@ -280,7 +299,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     setBusy(true);
     setMessage("");
     try {
-      await setCurrentModelCommand(provider.id, model, "", updateConfigFile);
+      await setCurrentModelCommand(provider.id, model, "", shouldUpdateConfig);
       setEditorOpen(false);
       setModels([]);
       setModelMenuOpen(false);
@@ -298,31 +317,32 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
           : current
       );
       setMessage(
-        updateConfigFile
+        shouldUpdateConfig
           ? `已设置 ${provider.name || provider.id} 为当前模型，并更新配置文件。`
           : `已设置 ${provider.name || provider.id} 为当前模型。`
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setBusy(false);
     }
-  }
+  }, [setMessage]);
 
-  async function saveCurrentProvider() {
+  const saveCurrentProvider = useCallback(async () => {
     const model = modelValueRef.current.trim();
     const draftToSave: ProviderDraft = { ...draftRef.current, model };
     const baseUrl = draftToSave.baseUrl.trim();
+    const shouldUpdateConfig = updateConfigFileRef.current;
 
     if (!baseUrl) {
       setMessage("请先填写 Base URL。");
       return;
     }
-    if (updateConfigFile && !model) {
+    if (shouldUpdateConfig && !model) {
       setMessage("请先选择 Model，或关闭更新配置文件。");
       return;
     }
-    if (updateConfigFile && !draftToSave.token.trim()) {
+    if (shouldUpdateConfig && !draftToSave.token.trim()) {
       setMessage("请先填写 Token，或关闭更新配置文件。");
       return;
     }
@@ -332,16 +352,16 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
 
     let savedProvider = false;
     try {
-      const result = await saveProvider(draftToSave, updateConfigFile);
+      const result = await saveProvider(draftToSave, shouldUpdateConfig);
       savedProvider = true;
 
       await refresh({ preferredId: result.providerId });
       setEditorOpen(false);
       setModels([]);
       setModelMenuOpen(false);
-      setMessage(updateConfigFile && model ? "已保存配置并写入当前模型。" : "已保存配置。");
+      setMessage(shouldUpdateConfig && model ? "已保存配置并写入当前模型。" : "已保存配置。");
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorMessage(error);
       if (savedProvider) {
         await refresh({ preferredId: draftRef.current.originalId || null });
         setEditorOpen(false);
@@ -354,13 +374,14 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     } finally {
       setBusy(false);
     }
-  }
+  }, [setMessage, refresh]);
 
-  async function fetchProviderModels() {
+  const fetchProviderModels = useCallback(async () => {
     const requestDraft = { ...draftRef.current, model: modelValueRef.current.trim() };
     const baseUrl = requestDraft.baseUrl.trim();
     const token = requestDraft.token.trim();
-    const canUseSavedToken = Boolean(selected?.tokenPresent && selected.id === requestDraft.originalId);
+    const currentSelected = selectedRef.current;
+    const canUseSavedToken = Boolean(currentSelected?.tokenPresent && currentSelected.id === requestDraft.originalId);
     if (!baseUrl) {
       setMessage("请先填写 Base URL。");
       return;
@@ -377,8 +398,9 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       const result = await fetchModels(requestDraft);
       const nextModel = requestDraft.model.trim();
       const fetchedProviderId = result.providerId || requestDraft.originalId || null;
+      const currentState = stateRef.current;
       const knownProvider = Boolean(
-        fetchedProviderId && state?.providers.some((provider) => provider.id === fetchedProviderId)
+        fetchedProviderId && currentState?.providers.some((provider) => provider.id === fetchedProviderId)
       );
       setModels(result.models);
       if (fetchedProviderId) {
@@ -420,25 +442,29 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     } catch (error) {
       setModels([]);
       setModelMenuOpen(false);
-      setMessage(`${error instanceof Error ? error.message : String(error)}。也可以手动填写模型名称。`);
+      setMessage(`${errorMessage(error)}。也可以手动填写模型名称。`);
     } finally {
       setLoadingModels(false);
       setMessagePaused(false);
     }
-  }
+  }, [setMessage, setMessagePaused, refresh, updateModelValue]);
 
-  async function restartCodex() {
+  const restartCodex = useCallback(async () => {
     setRestarting(true);
     setMessage("正在重启 Codex...");
     try {
       await restartCodexApp();
       setMessage("已请求重启 Codex。");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setRestarting(false);
     }
-  }
+  }, [setMessage]);
+
+  const toggleTokenVisible = useCallback(() => {
+    setTokenVisible((visible) => !visible);
+  }, []);
 
   return {
     state,
@@ -462,7 +488,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     setUpdateConfigFile,
     setModelMenuOpen,
     setModelValue: updateModelValue,
-    toggleTokenVisible: () => setTokenVisible((visible) => !visible),
+    toggleTokenVisible,
     refresh,
     restartCodex,
     openCreateProvider,

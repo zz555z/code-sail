@@ -121,11 +121,11 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     let name = input.name.trim();
     let base_url = input.base_url.trim();
     let model = input.model.trim();
-    let tool_type = input
-        .tool_type
-        .as_deref()
-        .and_then(|s| ToolType::from_str(s).ok())
-        .unwrap_or_default();
+    let tool_type = match input.tool_type.as_deref() {
+        Some(s) => ToolType::from_str(s)
+            .with_context(|| format!("无效的 tool type: {s}"))?,
+        None => ToolType::default(),
+    };
 
     if base_url.is_empty() {
         bail!("Base URL 不能为空");
@@ -303,26 +303,30 @@ fn copy_provider_inner(provider_id: &str) -> Result<CopyProviderResponse> {
     let copy_name = next_copy_name(&conn, &source.name)?;
     let copied_token = encrypt_optional_token(&config_path, source.token.as_deref())?;
     let tool_type_str = source.tool_type.as_str();
-    let position = next_provider_position(&conn, source.tool_type)?;
 
-    conn.execute(
-        r#"
-        INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type, position)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-        "#,
-        &[
-            SqlValue::Text(&copy_id),
-            SqlValue::Text(&copy_name),
-            SqlValue::Text(&source.base_url),
-            SqlValue::OptionalText(source.model.as_deref()),
-            SqlValue::Text(&source.wire_api),
-            SqlValue::I64(bool_to_i64(source.requires_open_ai_auth)),
-            SqlValue::OptionalText(copied_token.as_deref()),
-            SqlValue::Text(tool_type_str),
-            SqlValue::I64(position),
-        ],
-    )?;
-    copy_provider_models(&conn, source_id, &copy_id)?;
+    with_transaction(&conn, |conn| {
+        let position = next_provider_position(conn, source.tool_type)?;
+
+        conn.execute(
+            r#"
+            INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type, position)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "#,
+            &[
+                SqlValue::Text(&copy_id),
+                SqlValue::Text(&copy_name),
+                SqlValue::Text(&source.base_url),
+                SqlValue::OptionalText(source.model.as_deref()),
+                SqlValue::Text(&source.wire_api),
+                SqlValue::I64(bool_to_i64(source.requires_open_ai_auth)),
+                SqlValue::OptionalText(copied_token.as_deref()),
+                SqlValue::Text(tool_type_str),
+                SqlValue::I64(position),
+            ],
+        )?;
+        copy_provider_models(conn, source_id, &copy_id)?;
+        Ok(())
+    })?;
 
     sync_tool_config(&conn, &config_path, source.tool_type)?;
     Ok(CopyProviderResponse {

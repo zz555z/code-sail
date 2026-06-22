@@ -171,6 +171,8 @@ fn node_install_url() -> &'static str {
 
 #[cfg(target_os = "macos")]
 fn version_command_output(command: &str, args: &[&str]) -> std::io::Result<Output> {
+    use crate::terminal::shell_single_quote;
+
     let command_line = std::iter::once(command)
         .chain(args.iter().copied())
         .map(shell_single_quote)
@@ -202,11 +204,6 @@ fi
     Command::new("/bin/zsh")
         .args(["-lc", &script])
         .output()
-}
-
-#[cfg(target_os = "macos")]
-fn shell_single_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', r#"'\''"#))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]

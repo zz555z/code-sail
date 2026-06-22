@@ -16,7 +16,7 @@ use config::{
     save_provider, set_active_tool_command, set_current_model,
 };
 use history::{
-    delete_history_provider, delete_history_session, list_history_sessions,
+    delete_history_provider, delete_history_session,
     list_tool_history_sessions, read_history_session, resume_history_session,
 };
 
@@ -49,7 +49,6 @@ fn main() {
             open_codex_terminal,
             open_claude_terminal,
             open_tool_install,
-            list_history_sessions,
             list_tool_history_sessions,
             read_history_session,
             resume_history_session,

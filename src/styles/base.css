@@ -585,7 +585,10 @@ input:focus-visible {
   display: grid;
   position: relative;
   place-items: center;
+  width: 32px;
+  height: 32px;
   border: 1px solid rgba(222, 233, 228, 0.95);
+  border-radius: 12px;
   color: var(--leaf);
   background: rgba(255, 255, 255, 0.86);
   box-shadow: 0 8px 20px rgba(103, 137, 125, 0.08);
@@ -596,12 +599,6 @@ input:focus-visible {
     box-shadow 240ms var(--ease-ui),
     color 180ms ease,
     transform 240ms var(--ease-snap);
-}
-
-.row-button {
-  width: 32px;
-  height: 32px;
-  border-radius: 12px;
 }
 
 .row-button svg {
@@ -774,5 +771,22 @@ button[data-tooltip]:disabled::after {
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -18,155 +18,121 @@ pub(crate) fn open_claude_terminal_inner() -> Result<()> {
     open_claude_command_in_terminal(&[])
 }
 
-#[cfg(target_os = "macos")]
-pub(crate) fn open_claude_command_in_terminal(args: &[&str]) -> Result<()> {
-    let script_path = env::temp_dir().join(format!("codesail-claude-{}.command", timestamp_millis()));
-    let command_line = std::iter::once("claude")
-        .chain(args.iter().copied())
-        .map(shell_single_quote)
-        .collect::<Vec<_>>()
-        .join(" ");
-    let script = format!(
-        r#"#!/bin/zsh -l
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-
-if [ -f "$HOME/.zprofile" ]; then
-  . "$HOME/.zprofile" >/dev/null 2>&1 || true
-fi
-
-if [ -f "$HOME/.zshrc" ]; then
-  . "$HOME/.zshrc" >/dev/null 2>&1 || true
-fi
-
-{command_line}
-status=$?
-echo
-if [ $status -ne 0 ]; then
-  echo "claude failed with exit code $status"
-fi
-echo "Press any key to close this window..."
-read -k 1
-"#
-    );
-
-    fs::write(&script_path, script)
-        .with_context(|| format!("无法创建 Claude 终端脚本: {}", script_path.display()))?;
-    fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
-        .with_context(|| format!("无法设置 Claude 终端脚本权限: {}", script_path.display()))?;
-
-    Command::new("/usr/bin/open")
-        .arg(&script_path)
-        .spawn()
-        .context("无法打开终端启动 Claude Code")?;
-
-    Ok(())
+struct ToolTerminalConfig {
+    command: &'static str,
+    context_label: &'static str,
+    #[cfg(target_os = "macos")]
+    extra_script: &'static str,
 }
 
-#[cfg(target_os = "windows")]
-pub(crate) fn open_claude_command_in_terminal(args: &[&str]) -> Result<()> {
-    let mut command_args = vec!["/C", "start", "", "cmd", "/K", "claude"];
-    command_args.extend(args.iter().copied());
-
-    Command::new("cmd")
-        .args(command_args)
-        .spawn()
-        .context("无法打开终端启动 Claude Code")?;
-
-    Ok(())
-}
-
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-pub(crate) fn open_claude_command_in_terminal(args: &[&str]) -> Result<()> {
-    let candidates: [(&str, &[&str]); 7] = [
-        ("x-terminal-emulator", &["-e"]),
-        ("gnome-terminal", &["--"]),
-        ("kgx", &["--"]),
-        ("konsole", &["-e"]),
-        ("xfce4-terminal", &["-e"]),
-        ("mate-terminal", &["-e"]),
-        ("lxterminal", &["-e"]),
-    ];
-
-    for (terminal, terminal_args) in candidates {
-        let mut command = Command::new(terminal);
-        command.args(terminal_args).arg("claude").args(args);
-        if command.spawn().is_ok() {
-            return Ok(());
-        }
+fn claude_config() -> ToolTerminalConfig {
+    ToolTerminalConfig {
+        command: "claude",
+        context_label: "Claude Code",
+        #[cfg(target_os = "macos")]
+        extra_script: "",
     }
-
-    Command::new("claude")
-        .args(args)
-        .spawn()
-        .context("无法打开终端启动 Claude Code，请确认 claude 命令可用")?;
-
-    Ok(())
 }
 
-#[cfg(target_os = "macos")]
-pub(crate) fn open_codex_command_in_terminal(args: &[&str]) -> Result<()> {
-    let script_path = env::temp_dir().join(format!("codesail-codex-{}.command", timestamp_millis()));
-    let command_line = std::iter::once("codex")
-        .chain(args.iter().copied())
-        .map(shell_single_quote)
-        .collect::<Vec<_>>()
-        .join(" ");
-    let script = format!(
-        r#"#!/bin/zsh -l
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-
-if [ -f "$HOME/.zprofile" ]; then
-  . "$HOME/.zprofile" >/dev/null 2>&1 || true
-fi
-
-if [ -f "$HOME/.zshrc" ]; then
-  . "$HOME/.zshrc" >/dev/null 2>&1 || true
-fi
-
-if ! command -v codex >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
+fn codex_config() -> ToolTerminalConfig {
+    ToolTerminalConfig {
+        command: "codex",
+        context_label: "Codex",
+        #[cfg(target_os = "macos")]
+        extra_script: r#"if ! command -v codex >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
   . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1 || true
   nvm use --silent default >/dev/null 2>&1 || true
 fi
 
-{command_line}
+"#,
+    }
+}
+
+pub(crate) fn open_claude_command_in_terminal(args: &[&str]) -> Result<()> {
+    open_tool_in_terminal(&claude_config(), args)
+}
+
+pub(crate) fn open_codex_command_in_terminal(args: &[&str]) -> Result<()> {
+    open_tool_in_terminal(&codex_config(), args)
+}
+
+#[cfg(target_os = "macos")]
+fn open_tool_in_terminal(config: &ToolTerminalConfig, args: &[&str]) -> Result<()> {
+    let script_path = env::temp_dir().join(format!(
+        "codesail-{}-{}.command",
+        config.command,
+        timestamp_millis()
+    ));
+    let command_line = std::iter::once(config.command)
+        .chain(args.iter().copied())
+        .map(shell_single_quote)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let script = format!(
+        r#"#!/bin/zsh -l
+export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+if [ -f "$HOME/.zprofile" ]; then
+  . "$HOME/.zprofile" >/dev/null 2>&1 || true
+fi
+
+if [ -f "$HOME/.zshrc" ]; then
+  . "$HOME/.zshrc" >/dev/null 2>&1 || true
+fi
+
+{extra_script}{command_line}
 status=$?
 echo
 if [ $status -ne 0 ]; then
-  echo "codex failed with exit code $status"
+  echo "{command} failed with exit code $status"
 fi
 echo "Press any key to close this window..."
 read -k 1
-"#
+"#,
+        extra_script = config.extra_script,
+        command_line = command_line,
+        command = config.command,
     );
 
-    fs::write(&script_path, script)
-        .with_context(|| format!("无法创建 Codex 终端脚本: {}", script_path.display()))?;
+    fs::write(&script_path, script).with_context(|| {
+        format!(
+            "无法创建 {} 终端脚本: {}",
+            config.context_label,
+            script_path.display()
+        )
+    })?;
     fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
-        .with_context(|| format!("无法设置 Codex 终端脚本权限: {}", script_path.display()))?;
+        .with_context(|| {
+            format!(
+                "无法设置 {} 终端脚本权限: {}",
+                config.context_label,
+                script_path.display()
+            )
+        })?;
 
     Command::new("/usr/bin/open")
         .arg(&script_path)
         .spawn()
-        .context("无法打开终端启动 Codex")?;
+        .with_context(|| format!("无法打开终端启动 {}", config.context_label))?;
 
     Ok(())
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn open_codex_command_in_terminal(args: &[&str]) -> Result<()> {
-    let mut command_args = vec!["/C", "start", "", "cmd", "/K", "codex"];
+fn open_tool_in_terminal(config: &ToolTerminalConfig, args: &[&str]) -> Result<()> {
+    let mut command_args = vec!["/C", "start", "", "cmd", "/K", config.command];
     command_args.extend(args.iter().copied());
 
     Command::new("cmd")
         .args(command_args)
         .spawn()
-        .context("无法打开终端启动 Codex")?;
+        .with_context(|| format!("无法打开终端启动 {}", config.context_label))?;
 
     Ok(())
 }
 
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-pub(crate) fn open_codex_command_in_terminal(args: &[&str]) -> Result<()> {
+fn open_tool_in_terminal(config: &ToolTerminalConfig, args: &[&str]) -> Result<()> {
     let candidates: [(&str, &[&str]); 7] = [
         ("x-terminal-emulator", &["-e"]),
         ("gnome-terminal", &["--"]),
@@ -179,16 +145,21 @@ pub(crate) fn open_codex_command_in_terminal(args: &[&str]) -> Result<()> {
 
     for (terminal, terminal_args) in candidates {
         let mut command = Command::new(terminal);
-        command.args(terminal_args).arg("codex").args(args);
+        command.args(terminal_args).arg(config.command).args(args);
         if command.spawn().is_ok() {
             return Ok(());
         }
     }
 
-    Command::new("codex")
+    Command::new(config.command)
         .args(args)
         .spawn()
-        .context("无法打开终端启动 Codex，请确认 codex 命令可用")?;
+        .with_context(|| {
+            format!(
+                "无法打开终端启动 {}，请确认 {} 命令可用",
+                config.context_label, config.command
+            )
+        })?;
 
     Ok(())
 }
@@ -241,12 +212,12 @@ pub(crate) fn restart_codex_app_inner() -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn shell_single_quote(value: &str) -> String {
+pub(crate) fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r#"'\''"#))
 }
 
 #[cfg(target_os = "macos")]
-fn timestamp_millis() -> u128 {
+pub(crate) fn timestamp_millis() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())

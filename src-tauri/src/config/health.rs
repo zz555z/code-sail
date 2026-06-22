@@ -13,7 +13,6 @@ use crate::storage::open_database;
 pub struct HealthCheckRequest {
     pub base_url: String,
     pub provider_id: Option<String>,
-    pub token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,7 +40,7 @@ async fn check_provider_health_inner(
     let conn = open_database(&config_path)?;
     let provider_id = input.provider_id.as_deref().map(str::trim).unwrap_or_default();
     let token =
-        resolve_token_for_request(&conn, &config_path, provider_id, input.token.as_deref())?.value;
+        resolve_token_for_request(&conn, &config_path, provider_id, None)?.value;
 
     check_model_list_health_inner(input, &token).await
 }

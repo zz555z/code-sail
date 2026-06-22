@@ -129,12 +129,6 @@
   font-size: 13px;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .field-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

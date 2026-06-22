@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteHistoryProvider,
   deleteHistorySession,
@@ -8,6 +8,7 @@ import {
 } from "../lib/api";
 import { formatDeleteHistoryFailure } from "../lib/format";
 import type { HistoryConversation, HistoryProviderGroup, HistorySessionSummary, ToolType } from "../lib/types";
+import { errorMessage } from "../lib/utils";
 
 type UseHistorySessionsOptions = {
   activeTool: ToolType;
@@ -21,6 +22,8 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [expandedHistoryProviders, setExpandedHistoryProviders] = useState<Record<string, boolean>>({});
+  const selectedHistoryPathRef = useRef(selectedHistoryPath);
+  selectedHistoryPathRef.current = selectedHistoryPath;
 
   const allHistorySessions = useMemo(() => historyGroups.flatMap((group) => group.sessions), [historyGroups]);
   const historySessionCount = allHistorySessions.length;
@@ -62,14 +65,14 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
     setExpandedHistoryProviders({});
   }, [activeTool]);
 
-  async function refreshHistory(options?: { preferredPath?: string | null }) {
+  const refreshHistory = useCallback(async (options?: { preferredPath?: string | null }) => {
     setHistoryLoading(true);
     setMessage("");
     try {
       const groups = await listHistorySessions(activeTool);
       const sessions = groups.flatMap((group) => group.sessions);
       const hasPreferredPath = Object.prototype.hasOwnProperty.call(options || {}, "preferredPath");
-      const desiredPath = hasPreferredPath ? options?.preferredPath ?? null : selectedHistoryPath;
+      const desiredPath = hasPreferredPath ? options?.preferredPath ?? null : selectedHistoryPathRef.current;
       const nextSelectedPath =
         desiredPath && sessions.some((session) => session.path === desiredPath)
           ? desiredPath
@@ -87,13 +90,13 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
       setHistoryConversation(nextSelectedPath ? await readHistorySession(nextSelectedPath, activeTool) : null);
     } catch (error) {
       setHistoryConversation(null);
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setHistoryLoading(false);
     }
-  }
+  }, [activeTool, setMessage]);
 
-  async function openHistorySession(session: HistorySessionSummary) {
+  const openHistorySession = useCallback(async (session: HistorySessionSummary) => {
     setSelectedHistoryPath(session.path);
     setHistoryLoading(true);
     setMessage("");
@@ -101,20 +104,20 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
       setHistoryConversation(await readHistorySession(session.path, activeTool));
     } catch (error) {
       setHistoryConversation(null);
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setHistoryLoading(false);
     }
-  }
+  }, [activeTool, setMessage]);
 
-  function toggleHistoryProvider(provider: string) {
+  const toggleHistoryProvider = useCallback((provider: string) => {
     setExpandedHistoryProviders((current) => ({
       ...current,
       [provider]: !(current[provider] ?? true)
     }));
-  }
+  }, []);
 
-  async function resumeHistory(session: HistorySessionSummary | null) {
+  const resumeHistory = useCallback(async (session: HistorySessionSummary | null) => {
     if (!session) return;
     setHistoryBusy(true);
     setMessage("");
@@ -122,13 +125,13 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
       await resumeHistorySession(session.sessionId, activeTool);
       setMessage(`已打开终端恢复会话 ${session.sessionId}。`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setHistoryBusy(false);
     }
-  }
+  }, [activeTool, setMessage]);
 
-  async function removeHistorySession(session: HistorySessionSummary | null) {
+  const removeHistorySession = useCallback(async (session: HistorySessionSummary | null) => {
     if (!session) return;
     setHistoryBusy(true);
     setMessage("");
@@ -137,13 +140,13 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
       await refreshHistory({ preferredPath: null });
       setMessage(result.failureCount ? formatDeleteHistoryFailure(result) : `已删除会话 ${session.sessionId}。`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setHistoryBusy(false);
     }
-  }
+  }, [activeTool, setMessage, refreshHistory]);
 
-  async function removeHistoryProvider(group: HistoryProviderGroup) {
+  const removeHistoryProvider = useCallback(async (group: HistoryProviderGroup) => {
     setHistoryBusy(true);
     setMessage("");
     try {
@@ -155,11 +158,11 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
           : `已删除 ${result.successCount} 条历史会话。`
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setHistoryBusy(false);
     }
-  }
+  }, [activeTool, setMessage, refreshHistory]);
 
   return {
     historyGroups,

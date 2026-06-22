@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { checkAppUpdate, openAppUpdate } from "../lib/api";
 import type { AppUpdateInfo } from "../lib/types";
+import { errorMessage } from "../lib/utils";
 
 type UseAppUpdateOptions = {
   appVersion: string;
@@ -18,7 +19,7 @@ export function useAppUpdate({ appVersion, setMessage }: UseAppUpdateOptions) {
       const result = await checkAppUpdate(appVersion);
       setAppUpdate(result);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setCheckingAppUpdate(false);
     }
@@ -29,7 +30,7 @@ export function useAppUpdate({ appVersion, setMessage }: UseAppUpdateOptions) {
     try {
       await openAppUpdate();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setOpeningAppUpdate(false);
     }

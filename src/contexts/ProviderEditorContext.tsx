@@ -1,7 +1,5 @@
 import { createContext, useContext, type RefObject, type ReactNode } from "react";
-import type { AppState, HealthCheckResponse, ProviderDraft, ProviderView } from "../lib/types";
-
-type HealthStatus = HealthCheckResponse | "loading";
+import type { AppState, HealthStatus, ProviderDraft, ProviderView } from "../lib/types";
 
 export type ProviderEditorContextValue = {
   state: AppState | null;

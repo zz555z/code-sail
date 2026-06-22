@@ -148,11 +148,48 @@ export function ModelsPage() {
     }
   }, [activeTool, providerCount]);
 
+  useEffect(() => {
+    if (!showImportPrompt) return;
+    const dialog = document.querySelector<HTMLElement>(".confirm-dialog");
+    if (!dialog) return;
+    const focusable = dialog.querySelectorAll<HTMLElement>("button, [href], input, [tabindex]:not([tabindex='-1'])");
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDismissedImportPrompt(true);
+        setShowImportPrompt(false);
+        return;
+      }
+      if (event.key === "Tab" && focusable.length > 0) {
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    }
+
+    dialog.addEventListener("keydown", handleKeyDown);
+    return () => dialog.removeEventListener("keydown", handleKeyDown);
+  }, [showImportPrompt]);
+
   const currentTool = toolOptions.find((t) => t.value === activeTool) ?? toolOptions[0];
   const CurrentToolIcon = currentTool.icon;
   const providers = state?.providers ?? [];
   const activeProviderId = state?.activeProvider ?? null;
   const activeModel = state?.activeModel ?? "";
+
+  useEffect(() => {
+    if (!editorOpen) return;
+    const firstInput = document.querySelector<HTMLInputElement>(".config-editor .field-grid input");
+    firstInput?.focus();
+  }, [editorOpen]);
   const { draggingProviderId, dragOverTarget, handleProviderPointerDown } = useProviderReorder({
     providers,
     busy,
@@ -211,7 +248,29 @@ export function ModelsPage() {
             </div>
 
             <div className="board-actions">
-              <div className="tool-dropdown" ref={toolDropdownRef}>
+              <div className="tool-dropdown" ref={toolDropdownRef}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setToolDropdownOpen(false);
+                    return;
+                  }
+                  if (!toolDropdownOpen) return;
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    const items = toolDropdownRef.current?.querySelectorAll<HTMLButtonElement>(".tool-dropdown-item");
+                    if (!items?.length) return;
+                    const current = Array.from(items).findIndex((el) => el === document.activeElement);
+                    const next = event.key === "ArrowDown"
+                      ? (current + 1) % items.length
+                      : (current - 1 + items.length) % items.length;
+                    items[next]?.focus();
+                    return;
+                  }
+                  if (event.key === "Enter" && document.activeElement instanceof HTMLButtonElement) {
+                    document.activeElement.click();
+                  }
+                }}
+              >
                 <button
                   className={`tool-dropdown-trigger ${toolDropdownOpen ? "open" : ""}`}
                   type="button"
@@ -276,11 +335,15 @@ export function ModelsPage() {
               <button
                 className="soft-button toolbar-icon-button restart-codex-button"
                 type="button"
-                data-tooltip={restarting ? "正在重启 Codex" : "重启 Codex"}
+                data-tooltip={
+                  activeTool === "claude"
+                    ? "Claude Code 运行在终端中，无需重启"
+                    : restarting ? "正在重启 Codex" : "重启 Codex"
+                }
                 data-tooltip-placement="left"
-                aria-label="重启 Codex"
+                aria-label={activeTool === "claude" ? "Claude Code 运行在终端中，无需重启" : "重启 Codex"}
                 onClick={() => void restartCodex()}
-                disabled={busy || restarting}
+                disabled={busy || restarting || activeTool === "claude"}
               >
                 <Power size={17} />
               </button>
@@ -311,7 +374,7 @@ export function ModelsPage() {
 
           {toast}
 
-          <div className="config-list" role="list">
+          <div className="config-list" role="list" aria-label="模型配置列表">
             {providers.length ? (
               providers.map((provider) => (
                 <ProviderRow
@@ -435,6 +498,7 @@ export function ModelsPage() {
                         role="combobox"
                         aria-expanded={modelMenuOpen}
                         aria-controls="model-options"
+                        aria-autocomplete="list"
                         onFocus={() => setModelMenuOpen(models.length > 0)}
                         onClick={() => setModelMenuOpen(models.length > 0)}
                         onChange={(event) => {

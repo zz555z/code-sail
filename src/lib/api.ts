@@ -20,7 +20,7 @@ async function invokeCommand<T>(command: string, args?: Record<string, unknown>)
   try {
     return await invoke<T>(command, args);
   } catch (error) {
-    throw new Error(error instanceof Error ? error.message : String(error));
+    throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
   }
 }
 
@@ -44,8 +44,7 @@ export async function saveProvider(provider: ProviderDraft, updateConfig: boolea
   return await invokeCommand<SaveProviderResponse>("save_provider", {
     input: {
       ...provider,
-      updateConfig,
-      toolType: provider.toolType
+      updateConfig
     }
   });
 }

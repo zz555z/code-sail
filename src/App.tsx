@@ -32,34 +32,37 @@ export function App() {
   const appVersion = packageJson.version;
   const { message, setMessage, setPaused: setMessagePaused, messageClassName } = useTransientMessage();
   const { themePreference, cycleTheme } = useThemePreference();
-  const activeToolHook = useActiveTool();
+  const { activeTool, switching: toolSwitching, loadActiveTool, switchTool } = useActiveTool();
   const providerEditor = useProviderEditor({ setMessage, setMessagePaused });
-  const toolStatuses = useToolStatuses({ setMessage });
-  const historySessions = useHistorySessions({ activeTool: activeToolHook.activeTool, setMessage });
-  const appUpdate = useAppUpdate({ appVersion, setMessage });
+  const {
+    toolStatuses, toolStatusesLoading, openingTerminal, installingTool,
+    refreshToolStatuses, openInTerminal, openToolInstaller
+  } = useToolStatuses({ setMessage });
+  const historySessions = useHistorySessions({ activeTool, setMessage });
+  const {
+    appUpdate, checkingAppUpdate, openingAppUpdate,
+    refreshAppUpdate, openUpdatePage
+  } = useAppUpdate({ appVersion, setMessage });
 
   useEffect(() => {
-    void activeToolHook.loadActiveTool();
+    void loadActiveTool();
     void providerEditor.refresh();
-    void toolStatuses.refreshToolStatuses();
-    void appUpdate.refreshAppUpdate();
+    void refreshToolStatuses();
+    void refreshAppUpdate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleToolSwitch = useCallback(async (tool: ToolType) => {
     setMessage("");
-    await activeToolHook.switchTool(tool);
-    // Refresh providers for the new tool
+    await switchTool(tool);
     await providerEditor.refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeToolHook, providerEditor]);
+  }, [setMessage, switchTool, providerEditor.refresh]);
 
   useEffect(() => {
     if (activePage === "history" || activePage === "overview") {
       void historySessions.refreshHistory();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePage, activeToolHook.activeTool]);
+  }, [activePage, activeTool, historySessions.refreshHistory]);
 
   const messageValue = useMemo(
     () => ({ message, messageClassName, setMessage, setMessagePaused }),
@@ -69,29 +72,33 @@ export function App() {
   const appServicesValue = useMemo(
     () => ({
       appVersion,
-      appUpdate: appUpdate.appUpdate,
-      checkingAppUpdate: appUpdate.checkingAppUpdate,
-      openingAppUpdate: appUpdate.openingAppUpdate,
-      refreshAppUpdate: appUpdate.refreshAppUpdate,
-      openUpdatePage: appUpdate.openUpdatePage,
-      toolStatuses: toolStatuses.toolStatuses,
-      toolStatusesLoading: toolStatuses.toolStatusesLoading,
-      openingCodexTerminal: toolStatuses.openingCodexTerminal,
-      installingTool: toolStatuses.installingTool,
-      refreshToolStatuses: toolStatuses.refreshToolStatuses,
-      openCodexInTerminal: toolStatuses.openCodexInTerminal,
-      openToolInstaller: toolStatuses.openToolInstaller
+      appUpdate,
+      checkingAppUpdate,
+      openingAppUpdate,
+      refreshAppUpdate,
+      openUpdatePage,
+      toolStatuses,
+      toolStatusesLoading,
+      openingTerminal,
+      installingTool,
+      refreshToolStatuses,
+      openInTerminal,
+      openToolInstaller
     }),
-    [appVersion, appUpdate, toolStatuses]
+    [
+      appVersion, appUpdate, checkingAppUpdate, openingAppUpdate, refreshAppUpdate, openUpdatePage,
+      toolStatuses, toolStatusesLoading, openingTerminal, installingTool,
+      refreshToolStatuses, openInTerminal, openToolInstaller
+    ]
   );
 
   const activeToolValue = useMemo(
     () => ({
-      activeTool: activeToolHook.activeTool,
-      switching: activeToolHook.switching,
+      activeTool,
+      switching: toolSwitching,
       switchTool: handleToolSwitch
     }),
-    [activeToolHook.activeTool, activeToolHook.switching, handleToolSwitch]
+    [activeTool, toolSwitching, handleToolSwitch]
   );
 
   const navItems: Array<{ id: PageId; label: string; icon: ReactNode }> = useMemo(
@@ -113,6 +120,7 @@ export function App() {
               key={item.id}
               className={`nav-item ${activePage === item.id ? "active" : ""}`}
               type="button"
+              aria-current={activePage === item.id ? "page" : undefined}
               onClick={() => {
                 setMessage("");
                 setActivePage(item.id);

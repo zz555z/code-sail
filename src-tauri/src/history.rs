@@ -47,7 +47,7 @@ pub struct HistoryConversation {
     messages: Vec<HistoryMessage>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryMessage {
     role: String,
@@ -91,22 +91,27 @@ pub struct DeleteHistoryProviderRequest {
 }
 
 #[derive(Clone)]
+struct SessionParseResult {
+    session_id: String,
+    provider: String,
+    tool_type: ToolType,
+    title: String,
+    timestamp: Option<i64>,
+    path: String,
+    message_count: usize,
+    messages: Vec<HistoryMessage>,
+}
+
+#[derive(Clone)]
 struct CachedSummary {
     len: u64,
     modified_millis: u128,
-    summary: Option<HistorySessionSummary>,
+    result: Option<SessionParseResult>,
 }
 
 static SUMMARY_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedSummary>>> = OnceLock::new();
 
 const MAX_SESSIONS: usize = 200;
-
-#[tauri::command]
-pub async fn list_history_sessions() -> Result<Vec<HistoryProviderGroup>, String> {
-    run_background_task("codex-list-history-sessions", || list_history_sessions_inner(ToolType::Codex))
-        .await
-        .map_err(|error| error.to_string())
-}
 
 #[tauri::command]
 pub async fn list_tool_history_sessions(tool_type: ToolType) -> Result<Vec<HistoryProviderGroup>, String> {
@@ -177,7 +182,7 @@ fn list_history_sessions_inner(tool_type: ToolType) -> Result<Vec<HistoryProvide
 
     let mut all_sessions = Vec::<HistorySessionSummary>::new();
     for session_file in &session_files {
-        if let Some(summary) = summarize_session_file_cached(session_file, tool_type)? {
+        if let Some(summary) = parse_session_file_cached(session_file, tool_type)? {
             all_sessions.push(summary);
             if all_sessions.len() >= MAX_SESSIONS {
                 break;
@@ -224,7 +229,7 @@ fn prune_summary_cache(session_files: &[PathBuf]) {
     }
 }
 
-fn summarize_session_file_cached(
+fn parse_session_file_cached(
     session_file: &Path,
     tool_type: ToolType,
 ) -> Result<Option<HistorySessionSummary>> {
@@ -241,17 +246,18 @@ fn summarize_session_file_cached(
         .and_then(|items| items.get(&cache_key).cloned())
         .filter(|cached| cached.len == len && cached.modified_millis == modified_millis)
     {
-        return Ok(cached.summary);
+        return Ok(cached.result.as_ref().map(summary_from_parse_result));
     }
 
-    let summary = summarize_session_file(session_file, tool_type)?;
+    let parse_result = parse_session_file(session_file, tool_type)?;
+    let summary = parse_result.as_ref().map(summary_from_parse_result);
     if let Ok(mut items) = cache.lock() {
         items.insert(
             cache_key,
             CachedSummary {
                 len,
                 modified_millis,
-                summary: summary.clone(),
+                result: parse_result,
             },
         );
     }
@@ -275,7 +281,7 @@ fn file_modified_millis(path: &Path) -> u128 {
 fn read_history_session_inner(path: &str, tool_type: ToolType) -> Result<HistoryConversation> {
     let session_file = validated_session_file(path, tool_type)?;
 
-    let summary = summarize_session_file_cached(&session_file, tool_type)?.unwrap_or_else(|| {
+    let summary = parse_session_file_cached(&session_file, tool_type)?.unwrap_or_else(|| {
         let session_id = session_id_from_file(&session_file);
         HistorySessionSummary {
             session_id,
@@ -287,7 +293,7 @@ fn read_history_session_inner(path: &str, tool_type: ToolType) -> Result<History
             message_count: 0,
         }
     });
-    let messages = read_history_messages(&session_file, tool_type)?;
+    let messages = read_history_messages_cached(&session_file, tool_type)?;
 
     Ok(HistoryConversation {
         session_id: summary.session_id,
@@ -404,10 +410,10 @@ fn collect_session_files(dir: &Path, session_files: &mut Vec<PathBuf>) -> Result
     Ok(())
 }
 
-fn summarize_session_file(
+fn parse_session_file(
     session_file: &Path,
     tool_type: ToolType,
-) -> Result<Option<HistorySessionSummary>> {
+) -> Result<Option<SessionParseResult>> {
     let file = File::open(session_file)
         .with_context(|| format!("无法读取会话文件: {}", session_file.display()))?;
     let reader = BufReader::new(file);
@@ -416,7 +422,7 @@ fn summarize_session_file(
     let mut provider: Option<String> = None;
     let mut title: Option<String> = None;
     let mut timestamp: Option<i64> = None;
-    let mut message_count = 0usize;
+    let mut raw_messages: Vec<HistoryMessage> = Vec::new();
 
     for line in reader.lines() {
         let line = line.with_context(|| format!("无法读取 JSONL 行: {}", session_file.display()))?;
@@ -472,14 +478,21 @@ fn summarize_session_file(
         }
 
         let messages = messages_from_value(&value, tool_type);
-        message_count += messages.len();
         if title.is_none() {
             title = messages
                 .iter()
                 .find(|message| message.role.eq_ignore_ascii_case("user") && !message.content.trim().is_empty())
                 .map(|message| title_from_content(&message.content));
         }
+        raw_messages.extend(messages);
     }
+
+    let messages = if tool_type == ToolType::Claude {
+        merge_consecutive_messages(raw_messages)
+    } else {
+        raw_messages
+    };
+    let message_count = messages.len();
 
     let provider = match tool_type {
         ToolType::Codex => provider,
@@ -489,7 +502,7 @@ fn summarize_session_file(
         return Ok(None);
     };
 
-    Ok(Some(HistorySessionSummary {
+    Ok(Some(SessionParseResult {
         session_id,
         provider,
         tool_type,
@@ -497,7 +510,20 @@ fn summarize_session_file(
         timestamp,
         path: session_file.display().to_string(),
         message_count,
+        messages,
     }))
+}
+
+fn summary_from_parse_result(result: &SessionParseResult) -> HistorySessionSummary {
+    HistorySessionSummary {
+        session_id: result.session_id.clone(),
+        provider: result.provider.clone(),
+        tool_type: result.tool_type,
+        title: result.title.clone(),
+        timestamp: result.timestamp,
+        path: result.path.clone(),
+        message_count: result.message_count,
+    }
 }
 
 fn is_internal_subagent_session(payload: &Value) -> bool {
@@ -521,11 +547,12 @@ fn claude_provider_label_from_path(session_file: &Path) -> Option<String> {
         .parent()
         .and_then(Path::file_name)
         .and_then(|name| name.to_str())
-        .map(|name| name.trim_matches('-').replace('-', "/"))
+        .map(|name| name.trim_matches('-').to_string())
         .filter(|name| !name.trim().is_empty())
         .or_else(|| Some("claude".to_string()))
 }
 
+#[cfg(test)]
 fn read_history_messages(session_file: &Path, tool_type: ToolType) -> Result<Vec<HistoryMessage>> {
     let file = File::open(session_file)
         .with_context(|| format!("无法读取会话文件: {}", session_file.display()))?;
@@ -550,6 +577,50 @@ fn read_history_messages(session_file: &Path, tool_type: ToolType) -> Result<Vec
         messages.extend(messages_from_value(&value, tool_type));
     }
 
+    if tool_type == ToolType::Claude {
+        messages = merge_consecutive_messages(messages);
+    }
+
+    Ok(messages)
+}
+
+fn read_history_messages_cached(
+    session_file: &Path,
+    tool_type: ToolType,
+) -> Result<Vec<HistoryMessage>> {
+    let metadata = fs::metadata(session_file)
+        .with_context(|| format!("无法读取会话文件信息: {}", session_file.display()))?;
+    let len = metadata.len();
+    let modified_millis = system_time_millis(metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH));
+    let cache_key = session_file.to_path_buf();
+    let cache = SUMMARY_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+    if let Some(cached) = cache
+        .lock()
+        .ok()
+        .and_then(|items| items.get(&cache_key).cloned())
+        .filter(|cached| cached.len == len && cached.modified_millis == modified_millis)
+    {
+        if let Some(result) = cached.result {
+            return Ok(result.messages);
+        }
+    }
+
+    let parse_result = parse_session_file(session_file, tool_type)?;
+    let messages = parse_result
+        .as_ref()
+        .map(|r| r.messages.clone())
+        .unwrap_or_default();
+    if let Ok(mut items) = cache.lock() {
+        items.insert(
+            cache_key,
+            CachedSummary {
+                len,
+                modified_millis,
+                result: parse_result,
+            },
+        );
+    }
     Ok(messages)
 }
 
@@ -608,7 +679,7 @@ fn claude_messages_from_value(value: &Value) -> Vec<HistoryMessage> {
 
     let content = message
         .get("content")
-        .map(content_to_string)
+        .map(claude_content_to_string)
         .or_else(|| string_field(value, "content"))
         .unwrap_or_default();
     if content.trim().is_empty() {
@@ -644,6 +715,130 @@ fn content_to_string(value: &Value) -> String {
         Value::Null => String::new(),
         _ => value.to_string(),
     }
+}
+
+fn claude_content_to_string(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        Value::Array(items) => items
+            .iter()
+            .map(claude_content_block_to_string)
+            .filter(|item| !item.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Value::Object(_) => claude_content_block_to_string(value),
+        Value::Null => String::new(),
+        _ => value.to_string(),
+    }
+}
+
+fn claude_content_block_to_string(value: &Value) -> String {
+    let Value::Object(map) = value else {
+        return content_to_string(value);
+    };
+
+    let block_type = map.get("type").and_then(Value::as_str).unwrap_or_default();
+    match block_type {
+        "text" => map
+            .get("text")
+            .map(content_to_string)
+            .unwrap_or_default(),
+        "thinking" => String::new(),
+        "tool_use" => {
+            let tool_name = map.get("name").and_then(Value::as_str).unwrap_or("unknown");
+            let input = map.get("input").cloned().unwrap_or(Value::Null);
+            let summary = match tool_name {
+                "Read" | "read_file" => {
+                    let path = input.get("file_path").and_then(Value::as_str).unwrap_or("?");
+                    format!("[读取] {path}")
+                }
+                "Edit" | "Write" | "edit_file" | "write_file" => {
+                    let path = input.get("file_path").and_then(Value::as_str).unwrap_or("?");
+                    format!("[编辑] {path}")
+                }
+                "Bash" | "bash" | "execute_command" => {
+                    let cmd = input.get("command").and_then(Value::as_str).unwrap_or("?");
+                    let truncated = if cmd.chars().count() > 60 {
+                        format!("{}...", cmd.chars().take(60).collect::<String>())
+                    } else {
+                        cmd.to_string()
+                    };
+                    format!("[终端] {truncated}")
+                }
+                "Grep" | "Glob" | "grep" | "glob" => {
+                    let pattern = input
+                        .get("pattern")
+                        .or_else(|| input.get("query"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("?");
+                    format!("[搜索] {pattern}")
+                }
+                "WebFetch" | "WebSearch" => {
+                    let url_or_query = input
+                        .get("url")
+                        .or_else(|| input.get("query"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("?");
+                    format!("[网络] {url_or_query}")
+                }
+                "TodoWrite" => "[任务列表]".to_string(),
+                "AskUserQuestion" => "[提问]".to_string(),
+                _ => format!("[工具] {tool_name}"),
+            };
+            summary
+        }
+        "tool_result" => {
+            let result_content = map.get("content").unwrap_or(&Value::Null);
+            let text = match result_content {
+                Value::String(s) => s.clone(),
+                Value::Array(items) => items
+                    .iter()
+                    .filter_map(|item| {
+                        let obj = item.as_object()?;
+                        if obj.get("type").and_then(Value::as_str) == Some("text") {
+                            obj.get("text").and_then(Value::as_str).map(ToString::to_string)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                _ => String::new(),
+            };
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                String::new()
+            } else if trimmed.chars().count() > 100 {
+                format!("[结果] {}...", trimmed.chars().take(100).collect::<String>())
+            } else {
+                format!("[结果] {trimmed}")
+            }
+        }
+        _ => {
+            ["text", "content", "value"]
+                .iter()
+                .find_map(|key| map.get(*key).map(content_to_string))
+                .filter(|text| !text.trim().is_empty())
+                .unwrap_or_default()
+        }
+    }
+}
+
+fn merge_consecutive_messages(messages: Vec<HistoryMessage>) -> Vec<HistoryMessage> {
+    let mut merged: Vec<HistoryMessage> = Vec::new();
+    for message in messages {
+        if let Some(last) = merged.last_mut() {
+            if last.role == message.role {
+                if !last.content.is_empty() && !message.content.is_empty() {
+                    last.content.push_str("\n\n");
+                }
+                last.content.push_str(&message.content);
+                continue;
+            }
+        }
+        merged.push(message);
+    }
+    merged
 }
 
 fn string_field(value: &Value, field: &str) -> Option<String> {
@@ -757,7 +952,7 @@ mod tests {
 "#,
         )?;
 
-        let summary = summarize_session_file(&path, ToolType::Codex)?.expect("summary");
+        let summary = parse_session_file(&path, ToolType::Codex)?.expect("summary");
         assert_eq!(summary.session_id, "session-1");
         assert_eq!(summary.provider, "openai");
         assert_eq!(summary.tool_type, ToolType::Codex);
@@ -782,7 +977,7 @@ mod tests {
 "#,
         )?;
 
-        assert!(summarize_session_file(&path, ToolType::Codex)?.is_none());
+        assert!(parse_session_file(&path, ToolType::Codex)?.is_none());
 
         let _ = fs::remove_file(path);
         Ok(())
@@ -800,7 +995,7 @@ mod tests {
 "#,
         )?;
 
-        let summary = summarize_session_file(&path, ToolType::Claude)?.expect("summary");
+        let summary = parse_session_file(&path, ToolType::Claude)?.expect("summary");
         assert_eq!(summary.session_id, "claude-session-1");
         assert_eq!(summary.provider, "example-project");
         assert_eq!(summary.tool_type, ToolType::Claude);
@@ -812,6 +1007,48 @@ mod tests {
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[1].role, "assistant");
         assert_eq!(messages[1].content, "Hello from Claude");
+
+        let _ = fs::remove_file(path);
+        Ok(())
+    }
+
+    #[test]
+    fn parses_claude_tool_use_and_tool_result_messages() -> Result<()> {
+        let path = temp_session_file("claude-tools");
+        fs::write(
+            &path,
+            r#"{"type":"user","message":{"role":"user","content":"Read my file"},"timestamp":"2026-06-22T10:00:00Z","cwd":"/tmp/my-project","sessionId":"tool-session-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Let me read the file"},{"type":"tool_use","id":"call_1","name":"Read","input":{"file_path":"/tmp/my-project/src/main.rs"}}]},"timestamp":"2026-06-22T10:00:01Z","cwd":"/tmp/my-project","sessionId":"tool-session-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"call_2","name":"Bash","input":{"command":"cargo test"}}]},"timestamp":"2026-06-22T10:00:02Z","cwd":"/tmp/my-project","sessionId":"tool-session-1"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"fn main() {}"}]},"timestamp":"2026-06-22T10:00:03Z","cwd":"/tmp/my-project","sessionId":"tool-session-1"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_2","content":"test result: ok. 3 passed"}]},"timestamp":"2026-06-22T10:00:04Z","cwd":"/tmp/my-project","sessionId":"tool-session-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All tests passed!"}]},"timestamp":"2026-06-22T10:00:05Z","cwd":"/tmp/my-project","sessionId":"tool-session-1"}
+"#,
+        )?;
+
+        let summary = parse_session_file(&path, ToolType::Claude)?.expect("summary");
+        assert_eq!(summary.session_id, "tool-session-1");
+        assert_eq!(summary.provider, "my-project");
+        assert_eq!(summary.title, "Read my file");
+        // After merge: user, assistant(thinking dropped + 2 tool_use), user(2 tool_result), assistant(text) = 4
+        assert_eq!(summary.message_count, 4);
+
+        let messages = read_history_messages(&path, ToolType::Claude)?;
+        assert_eq!(messages.len(), 4);
+
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "Read my file");
+
+        assert_eq!(messages[1].role, "assistant");
+        assert!(messages[1].content.contains("[读取] /tmp/my-project/src/main.rs"));
+        assert!(messages[1].content.contains("[终端] cargo test"));
+
+        assert_eq!(messages[2].role, "user");
+        assert!(messages[2].content.contains("[结果] fn main()"));
+        assert!(messages[2].content.contains("[结果] test result: ok. 3 passed"));
+
+        assert_eq!(messages[3].role, "assistant");
+        assert_eq!(messages[3].content, "All tests passed!");
 
         let _ = fs::remove_file(path);
         Ok(())

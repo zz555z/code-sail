@@ -11,8 +11,16 @@ export default defineConfig({
   },
   envPrefix: ["VITE_", "TAURI_"],
   build: {
-    target: "es2020",
+    target: "es2022",
     minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
-    sourcemap: Boolean(process.env.TAURI_DEBUG)
+    sourcemap: Boolean(process.env.TAURI_DEBUG),
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom"],
+          "vendor-icons": ["lucide-react"]
+        }
+      }
+    }
   }
 });

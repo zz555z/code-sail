@@ -167,10 +167,10 @@ export function HistoryPage() {
                 </div>
               </header>
 
-              <div className="conversation-list">
+              <div className="conversation-list" role="log" aria-label="会话对话内容">
                 {historyConversation.messages.length ? (
-                  historyConversation.messages.map((item) => (
-                    <article className={`conversation-message ${roleClass(item.role)}`} key={`${item.role}-${item.content.length}-${item.content.slice(0, 40)}`}>
+                  historyConversation.messages.map((item, index) => (
+                    <article className={`conversation-message ${roleClass(item.role)}`} key={`${historyConversation.sessionId}-${index}`}>
                       <span>{roleLabel(item.role)}</span>
                       <p>{item.content}</p>
                     </article>

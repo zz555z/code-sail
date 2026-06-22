@@ -16,6 +16,7 @@ const DATABASE_FILE_NAME: &str = "codex-config-desktop.sqlite3";
 const TOKEN_KEY_FILE_NAME: &str = "codex-config-desktop.key";
 const TOKEN_PREFIX: &str = "enc:v1:";
 static INITIALIZED_DATABASES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+static TOKEN_KEY_CACHE: OnceLock<[u8; 32]> = OnceLock::new();
 
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
@@ -59,13 +60,13 @@ impl Default for ToolType {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderView {
-    id: String,
-    name: Option<String>,
-    base_url: Option<String>,
-    model: Option<String>,
-    models: Vec<String>,
-    token_present: bool,
-    tool_type: ToolType,
+    pub(crate) id: String,
+    pub(crate) name: Option<String>,
+    pub(crate) base_url: Option<String>,
+    pub(crate) model: Option<String>,
+    pub(crate) models: Vec<String>,
+    pub(crate) token_present: bool,
+    pub(crate) tool_type: ToolType,
 }
 
 #[derive(Debug, Clone)]
@@ -769,6 +770,16 @@ fn decrypt_token(config_path: &Path, token: &str) -> Result<String> {
 }
 
 fn load_or_create_token_key(config_path: &Path) -> Result<[u8; 32]> {
+    if let Some(cached) = TOKEN_KEY_CACHE.get() {
+        return Ok(*cached);
+    }
+
+    let key = load_or_create_token_key_from_disk(config_path)?;
+    let _ = TOKEN_KEY_CACHE.set(key);
+    Ok(key)
+}
+
+fn load_or_create_token_key_from_disk(config_path: &Path) -> Result<[u8; 32]> {
     let key_path = token_key_path(config_path)?;
     if key_path.exists() {
         let raw = fs::read_to_string(&key_path)

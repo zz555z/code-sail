@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, thread, time::Duration};
+use std::{cmp::Ordering, time::Duration};
 
 use crate::tasks::run_background_task;
 use crate::tools::open_external_url;
@@ -32,7 +32,7 @@ struct GitHubRelease {
 
 #[tauri::command]
 pub async fn check_app_update(current_version: String) -> Result<AppUpdateInfo, String> {
-    check_app_update_on_network_thread(current_version)
+    check_app_update_inner(current_version)
         .await
         .map_err(|error| error.to_string())
 }
@@ -44,28 +44,6 @@ pub async fn open_app_update() -> Result<(), String> {
     })
     .await
     .map_err(|error| error.to_string())
-}
-
-async fn check_app_update_on_network_thread(current_version: String) -> Result<AppUpdateInfo> {
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-
-    thread::Builder::new()
-        .name("codesail-check-update".to_string())
-        .spawn(move || {
-            let result = (|| -> Result<AppUpdateInfo> {
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .context("failed to build check_app_update Tokio runtime")?;
-                runtime.block_on(check_app_update_inner(current_version))
-            })();
-            let _ = sender.send(result);
-        })
-        .context("failed to spawn check_app_update network thread")?;
-
-    receiver
-        .await
-        .context("check_app_update network thread exited without result")?
 }
 
 async fn check_app_update_inner(current_version: String) -> Result<AppUpdateInfo> {

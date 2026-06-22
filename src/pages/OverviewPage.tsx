@@ -68,10 +68,10 @@ export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProp
     refreshAppUpdate,
     toolStatuses,
     toolStatusesLoading,
-    openingCodexTerminal,
+    openingTerminal,
     installingTool,
     refreshToolStatuses,
-    openCodexInTerminal,
+    openInTerminal,
     openToolInstaller
   } = useAppServicesContext();
   const {
@@ -94,7 +94,7 @@ export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProp
           <LayoutDashboard size={18} />
           <div>
             <h3>概览</h3>
-            <p>Codex 环境、当前模型和历史记录摘要</p>
+            <p>{activeToolName} 环境、当前模型和历史记录摘要</p>
           </div>
         </div>
 
@@ -171,16 +171,16 @@ export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProp
           <div className="overview-section-head">
             <div>
               <h4>运行环境</h4>
-              <p>Codex、Node.js、npm 当前状态和版本</p>
+              <p>{activeToolName}、Node.js、npm 当前状态和版本</p>
             </div>
             <button
               className="row-button overview-section-action"
               type="button"
-              data-tooltip={openingCodexTerminal ? "正在打开 Codex" : "在终端打开 Codex"}
+              data-tooltip={openingTerminal ? `正在打开 ${activeToolName}` : `在终端打开 ${activeToolName}`}
               data-tooltip-placement="left"
-              aria-label="在终端打开 Codex"
-              onClick={() => void openCodexInTerminal()}
-              disabled={openingCodexTerminal}
+              aria-label={`在终端打开 ${activeToolName}`}
+              onClick={() => void openInTerminal(activeTool)}
+              disabled={openingTerminal}
             >
               <Terminal size={15} />
             </button>

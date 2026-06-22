@@ -360,16 +360,13 @@
 }
 
 .overview-empty-line {
-  color: var(--soft-ink);
-  font-size: 12px;
-}
-
-.overview-empty-line {
   display: grid;
   place-items: center;
   min-height: 72px;
   border: 1px dashed #cfe2da;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.48);
+  color: var(--soft-ink);
+  font-size: 12px;
   text-align: center;
 }

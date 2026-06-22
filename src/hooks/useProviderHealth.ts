@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { checkProviderHealth } from "../lib/api";
-import type { HealthCheckResponse, ProviderView } from "../lib/types";
-
-type HealthStatus = HealthCheckResponse | "loading";
+import type { HealthStatus, ProviderView } from "../lib/types";
+import { errorMessage } from "../lib/utils";
 
 type UseProviderHealthOptions = {
   setMessage: (message: string) => void;
@@ -21,7 +20,7 @@ export function useProviderHealth({ setMessage }: UseProviderHealthOptions) {
     };
   }, []);
 
-  async function healthCheckProvider(provider: ProviderView) {
+  const healthCheckProvider = useCallback(async (provider: ProviderView) => {
     const baseUrl = (provider.baseUrl || "").trim();
     if (!baseUrl) {
       setMessage("该配置没有 Base URL。");
@@ -62,9 +61,9 @@ export function useProviderHealth({ setMessage }: UseProviderHealthOptions) {
         delete next[provider.id];
         return next;
       });
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     }
-  }
+  }, [setMessage]);
 
   return { healthCheckResults, healthCheckProvider };
 }

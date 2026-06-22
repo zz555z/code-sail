@@ -8,7 +8,7 @@ use tauri::{
 
 use crate::codex_config::{codex_config_path, sync_codex_files};
 use crate::storage::{
-    get_active_model, get_active_provider, get_active_tool, list_stored_providers,
+    collect_providers_from_database, get_active_model, get_active_provider, get_active_tool,
     open_database, set_active_model, set_active_provider, ToolType,
 };
 use crate::terminal::{open_codex_terminal_inner, restart_codex_app_inner};
@@ -94,7 +94,7 @@ fn build_tray_menu(app: &App) -> Result<tauri::menu::Menu<tauri::Wry>> {
     let active_tool = get_active_tool(&conn).unwrap_or_default();
     let active_provider = get_active_provider(&conn, active_tool)?.unwrap_or_default();
     let active_model = get_active_model(&conn, active_tool)?.unwrap_or_default();
-    let providers = list_stored_providers(&conn, &config_path, active_tool)?;
+    let providers = collect_providers_from_database(&conn, active_tool)?;
 
     let tool_label = match active_tool {
         ToolType::Codex => "Codex",
@@ -107,7 +107,7 @@ fn build_tray_menu(app: &App) -> Result<tauri::menu::Menu<tauri::Wry>> {
         let provider_name = providers
             .iter()
             .find(|p| p.id == active_provider)
-            .map(|p| p.name.as_str())
+            .and_then(|p| p.name.as_deref())
             .unwrap_or(&active_provider);
         if active_model.is_empty() {
             format!("[{tool_label}] {provider_name}")
@@ -124,10 +124,11 @@ fn build_tray_menu(app: &App) -> Result<tauri::menu::Menu<tauri::Wry>> {
     let mut switch_submenu_builder = SubmenuBuilder::new(app, "切换模型");
     for provider in &providers {
         let is_active = provider.id == active_provider;
+        let display_name = provider.name.as_deref().unwrap_or(&provider.id);
         let label = if is_active {
-            format!("● {}", provider.name)
+            format!("● {display_name}")
         } else {
-            provider.name.clone()
+            display_name.to_string()
         };
         let item = MenuItemBuilder::new(label)
             .id(format!("{}{}", SWITCH_PROVIDER_PREFIX, provider.id))
@@ -194,7 +195,7 @@ fn switch_provider_inner(app: &tauri::AppHandle, provider_id: &str) -> Result<()
     let conn = open_database(&config_path)?;
     let active_tool = get_active_tool(&conn).unwrap_or_default();
 
-    let providers = list_stored_providers(&conn, &config_path, active_tool)?;
+    let providers = collect_providers_from_database(&conn, active_tool)?;
     let provider = providers
         .iter()
         .find(|p| p.id == provider_id)
@@ -213,9 +214,10 @@ fn switch_provider_inner(app: &tauri::AppHandle, provider_id: &str) -> Result<()
         }
     }
 
+    let provider_name = provider.name.clone().unwrap_or_else(|| provider.id.clone());
     let payload = TraySwitchPayload {
         provider_id: provider.id.clone(),
-        provider_name: provider.name.clone(),
+        provider_name: provider_name.clone(),
         model: provider.model.clone(),
     };
 
@@ -224,7 +226,7 @@ fn switch_provider_inner(app: &tauri::AppHandle, provider_id: &str) -> Result<()
     log::info!(
         "tray switched provider: id={} name={}",
         provider.id,
-        provider.name
+        provider_name
     );
 
     Ok(())

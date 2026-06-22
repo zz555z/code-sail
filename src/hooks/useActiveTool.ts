@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { getActiveTool, setActiveTool } from "../lib/api";
 import type { ToolType } from "../lib/types";
+import { errorMessage } from "../lib/utils";
 
 export function useActiveTool() {
   const [activeTool, setActiveToolState] = useState<ToolType>("codex");
@@ -10,8 +11,8 @@ export function useActiveTool() {
     try {
       const tool = await getActiveTool();
       setActiveToolState(tool);
-    } catch {
-      // Fall back to default
+    } catch (error) {
+      console.warn("Failed to load active tool:", errorMessage(error));
     }
   }, []);
 

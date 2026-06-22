@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { getToolStatuses, openCodexTerminal, openToolInstall } from "../lib/api";
-import type { ToolStatus } from "../lib/types";
+import { useCallback, useState } from "react";
+import { getToolStatuses, openClaudeTerminal, openCodexTerminal, openToolInstall } from "../lib/api";
+import type { ToolStatus, ToolType } from "../lib/types";
+import { errorMessage } from "../lib/utils";
 
 type UseToolStatusesOptions = {
   setMessage: (message: string) => void;
@@ -9,54 +10,59 @@ type UseToolStatusesOptions = {
 export function useToolStatuses({ setMessage }: UseToolStatusesOptions) {
   const [toolStatuses, setToolStatuses] = useState<ToolStatus[]>([]);
   const [toolStatusesLoading, setToolStatusesLoading] = useState(false);
-  const [openingCodexTerminal, setOpeningCodexTerminal] = useState(false);
+  const [openingTerminal, setOpeningTerminal] = useState(false);
   const [installingTool, setInstallingTool] = useState<string | null>(null);
 
-  async function refreshToolStatuses() {
+  const refreshToolStatuses = useCallback(async () => {
     setToolStatusesLoading(true);
     try {
       setToolStatuses(await getToolStatuses());
     } catch (error) {
       setToolStatuses([]);
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setToolStatusesLoading(false);
     }
-  }
+  }, [setMessage]);
 
-  async function openCodexInTerminal() {
-    setOpeningCodexTerminal(true);
+  const openInTerminal = useCallback(async (toolType: ToolType) => {
+    setOpeningTerminal(true);
     setMessage("");
+    const toolName = toolType === "claude" ? "Claude" : "Codex";
     try {
-      await openCodexTerminal();
-      setMessage("已打开终端启动 Codex。");
+      if (toolType === "claude") {
+        await openClaudeTerminal();
+      } else {
+        await openCodexTerminal();
+      }
+      setMessage(`已打开终端启动 ${toolName}。`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
-      setOpeningCodexTerminal(false);
+      setOpeningTerminal(false);
     }
-  }
+  }, [setMessage]);
 
-  async function openToolInstaller(tool: ToolStatus) {
+  const openToolInstaller = useCallback(async (tool: ToolStatus) => {
     setInstallingTool(tool.command);
     setMessage("");
     try {
       await openToolInstall(tool.command);
       setMessage(`已打开 ${tool.name} 安装页面。`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(errorMessage(error));
     } finally {
       setInstallingTool(null);
     }
-  }
+  }, [setMessage]);
 
   return {
     toolStatuses,
     toolStatusesLoading,
-    openingCodexTerminal,
+    openingTerminal,
     installingTool,
     refreshToolStatuses,
-    openCodexInTerminal,
+    openInTerminal,
     openToolInstaller
   };
 }

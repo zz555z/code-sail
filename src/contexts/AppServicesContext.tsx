@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
-import type { AppUpdateInfo, ToolStatus } from "../lib/types";
+import type { AppUpdateInfo, ToolStatus, ToolType } from "../lib/types";
 
 export type AppServicesContextValue = {
   appVersion: string;
@@ -10,10 +10,10 @@ export type AppServicesContextValue = {
   openUpdatePage: () => Promise<void>;
   toolStatuses: ToolStatus[];
   toolStatusesLoading: boolean;
-  openingCodexTerminal: boolean;
+  openingTerminal: boolean;
   installingTool: string | null;
   refreshToolStatuses: () => Promise<void>;
-  openCodexInTerminal: () => Promise<void>;
+  openInTerminal: (toolType: ToolType) => Promise<void>;
   openToolInstaller: (tool: ToolStatus) => Promise<void>;
 };
 
