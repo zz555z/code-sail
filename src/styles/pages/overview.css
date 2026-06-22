@@ -9,6 +9,8 @@
   overflow: auto;
   padding: 8px 2px 10px 0;
   scrollbar-width: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .overview-layout::-webkit-scrollbar {
@@ -363,9 +365,9 @@
   display: grid;
   place-items: center;
   min-height: 72px;
-  border: 1px dashed #cfe2da;
+  border: 1px solid rgba(207, 226, 218, 0.6);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.48);
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.6) 0%, rgba(242, 251, 247, 0.3) 100%);
   color: var(--soft-ink);
   font-size: 12px;
   text-align: center;

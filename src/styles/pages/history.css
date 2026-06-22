@@ -7,6 +7,8 @@
   min-height: 0;
   overflow: hidden;
   padding-top: 2px;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .history-provider-list,
@@ -280,9 +282,9 @@
 }
 
 .history-empty-state {
-  border: 1px dashed #cfe2da;
+  border: 1px solid rgba(207, 226, 218, 0.6);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.54);
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.7) 0%, rgba(242, 251, 247, 0.4) 100%);
 }
 
 .history-empty-state.compact {

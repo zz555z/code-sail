@@ -51,6 +51,25 @@ export function App() {
     refreshAppUpdate, openUpdatePage
   } = useAppUpdate({ appVersion, setMessage });
 
+  // Prevent text selection on drag
+  useEffect(() => {
+    const preventSelection = (e: Event) => {
+      const target = e.target as HTMLElement;
+      // Allow selection in input fields and content areas
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.closest("input, textarea, code, pre, .conversation-message-content, .provider-details")
+      ) {
+        return;
+      }
+      e.preventDefault();
+    };
+
+    document.addEventListener("selectstart", preventSelection);
+    return () => document.removeEventListener("selectstart", preventSelection);
+  }, []);
+
   useEffect(() => {
     const initialize = async () => {
       try {
@@ -194,21 +213,27 @@ export function App() {
                     ) : (
                       <>
                         {activePage === "overview" ? (
-                          <ErrorBoundary>
-                            <OverviewPage themePreference={themePreference} onCycleTheme={cycleTheme} />
-                          </ErrorBoundary>
+                          <div className="page-transition" key="overview">
+                            <ErrorBoundary>
+                              <OverviewPage themePreference={themePreference} onCycleTheme={cycleTheme} />
+                            </ErrorBoundary>
+                          </div>
                         ) : null}
 
                         {activePage === "history" ? (
-                          <ErrorBoundary>
-                            <HistoryPage />
-                          </ErrorBoundary>
+                          <div className="page-transition" key="history">
+                            <ErrorBoundary>
+                              <HistoryPage />
+                            </ErrorBoundary>
+                          </div>
                         ) : null}
 
                         {activePage === "models" ? (
-                          <ErrorBoundary>
-                            <ModelsPage />
-                          </ErrorBoundary>
+                          <div className="page-transition" key="models">
+                            <ErrorBoundary>
+                              <ModelsPage />
+                            </ErrorBoundary>
+                          </div>
                         ) : null}
                       </>
                     )}

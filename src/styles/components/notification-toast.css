@@ -1,6 +1,6 @@
 .notification-toast-layer {
   position: absolute;
-  z-index: 9;
+  z-index: 40;
   top: clamp(70px, 6vw, 86px);
   left: 50%;
   display: grid;

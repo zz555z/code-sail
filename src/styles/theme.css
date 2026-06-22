@@ -1,5 +1,5 @@
 :root[data-theme="dark"] .nav-item::before {
-  background: linear-gradient(135deg, rgba(35, 56, 48, 0.82), rgba(27, 47, 40, 0.78));
+  background: linear-gradient(135deg, rgba(30, 30, 30, 0.82), rgba(22, 22, 22, 0.78));
 }
 
 :root[data-theme="dark"] .nav-item:hover,
@@ -16,7 +16,7 @@
 }
 
 :root[data-theme="dark"] .primary-button {
-  color: #10221b;
+  color: #0a0a0a;
 }
 
 :root[data-theme="dark"] .row-button,
@@ -44,19 +44,19 @@
 
 :root[data-theme="dark"] .config-row::before {
   background:
-    linear-gradient(135deg, rgba(32, 56, 48, 0.74), rgba(24, 38, 33, 0.34) 62%),
-    radial-gradient(circle at 14% 0%, rgba(80, 138, 118, 0.22), transparent 42%);
+    linear-gradient(135deg, rgba(28, 28, 28, 0.74), rgba(20, 20, 20, 0.34) 62%),
+    radial-gradient(circle at 14% 0%, rgba(60, 60, 60, 0.22), transparent 42%);
 }
 
 :root[data-theme="dark"] .overview-hero {
   background:
-    linear-gradient(135deg, rgba(22, 36, 30, 0.92), rgba(25, 45, 38, 0.76)),
-    radial-gradient(circle at 10% 0%, rgba(80, 138, 118, 0.24), transparent 48%);
+    linear-gradient(135deg, rgba(16, 16, 16, 0.92), rgba(22, 22, 22, 0.76)),
+    radial-gradient(circle at 10% 0%, rgba(50, 50, 50, 0.24), transparent 48%);
 }
 
 :root[data-theme="dark"] .history-summary-grid article,
 :root[data-theme="dark"] .conversation-message.user {
-  background: rgba(30, 52, 44, 0.72);
+  background: rgba(28, 28, 28, 0.72);
 }
 
 :root[data-theme="dark"] .danger-button,
@@ -69,8 +69,8 @@
 :root[data-theme="dark"] .empty-configs,
 :root[data-theme="dark"] .history-empty-state,
 :root[data-theme="dark"] .overview-empty-line {
-  border-color: rgba(72, 111, 96, 0.68);
-  background: rgba(20, 32, 27, 0.58);
+  border-color: rgba(50, 50, 50, 0.68);
+  background: rgba(20, 20, 20, 0.58);
 }
 
 :root[data-theme="dark"] .model-menu {
@@ -78,9 +78,9 @@
 }
 
 :root[data-theme="dark"] input::placeholder {
-  color: #6f837b;
+  color: #777777;
 }
 
 :root[data-theme="dark"] .config-sync-switch {
-  background: #334a42;
+  background: #2a2a2a;
 }

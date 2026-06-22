@@ -55,12 +55,12 @@
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 8px;
+  gap: 12px;
   min-height: 260px;
-  border: 1px dashed #cfe2da;
+  border: 1px solid rgba(207, 226, 218, 0.6);
   border-radius: 24px;
   color: var(--soft-ink);
-  background: rgba(255, 255, 255, 0.56);
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.7) 0%, rgba(242, 251, 247, 0.4) 100%);
   text-align: center;
 }
 
