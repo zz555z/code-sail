@@ -1,4 +1,4 @@
-import { type SVGProps, useEffect, useRef, useState } from "react";
+import { type SVGProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   Eye,
@@ -12,15 +12,18 @@ import {
   Trash2,
   X
 } from "lucide-react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NotificationToast } from "../components/NotificationToast";
 import { ProviderRow } from "../components/ProviderRow";
 import { useActiveToolContext } from "../contexts/ActiveToolContext";
 import { useMessage } from "../contexts/MessageContext";
 import { useProviderEditorContext } from "../contexts/ProviderEditorContext";
 import { useProviderReorder } from "../hooks/useProviderReorder";
-import type { ToolType } from "../lib/types";
+import type { ProviderView, ToolType } from "../lib/types";
 
 type ToolIconProps = SVGProps<SVGSVGElement> & { title?: string };
+
+const EMPTY_PROVIDERS: ProviderView[] = [];
 
 function CodexLogoIcon({ title, ...props }: ToolIconProps) {
   return (
@@ -70,11 +73,12 @@ const toolOptions: Array<{ value: ToolType; label: string; icon: (props: ToolIco
 ];
 
 export function ModelsPage() {
-  const { message, messageClassName } = useMessage();
+  const { message, messageClassName, dismissMessage } = useMessage();
   const { activeTool, switching: toolSwitching, switchTool } = useActiveToolContext();
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [showImportPrompt, setShowImportPrompt] = useState(false);
   const [dismissedImportPrompt, setDismissedImportPrompt] = useState(false);
+  const [providerPendingDelete, setProviderPendingDelete] = useState<ProviderView | null>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const {
     state,
@@ -148,42 +152,43 @@ export function ModelsPage() {
     }
   }, [activeTool, providerCount]);
 
-  useEffect(() => {
-    if (!showImportPrompt) return;
-    const dialog = document.querySelector<HTMLElement>(".confirm-dialog");
-    if (!dialog) return;
-    const focusable = dialog.querySelectorAll<HTMLElement>("button, [href], input, [tabindex]:not([tabindex='-1'])");
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    first?.focus();
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setDismissedImportPrompt(true);
-        setShowImportPrompt(false);
-        return;
-      }
-      if (event.key === "Tab" && focusable.length > 0) {
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
-      }
-    }
-
-    dialog.addEventListener("keydown", handleKeyDown);
-    return () => dialog.removeEventListener("keydown", handleKeyDown);
-  }, [showImportPrompt]);
-
   const currentTool = toolOptions.find((t) => t.value === activeTool) ?? toolOptions[0];
   const CurrentToolIcon = currentTool.icon;
-  const providers = state?.providers ?? [];
+  const providers = state?.providers ?? EMPTY_PROVIDERS;
   const activeProviderId = state?.activeProvider ?? null;
   const activeModel = state?.activeModel ?? "";
+
+  const providerMap = useMemo(() => {
+    const map = new Map<string, ProviderView>();
+    for (const provider of providers) {
+      map.set(provider.id, provider);
+    }
+    return map;
+  }, [providers]);
+
+  const handleEditProvider = useCallback((providerId: string) => {
+    const provider = providerMap.get(providerId);
+    if (provider) void openEditProvider(provider);
+  }, [providerMap, openEditProvider]);
+
+  const handleCopyProvider = useCallback((providerId: string) => {
+    void copyProvider(providerId);
+  }, [copyProvider]);
+
+  const handleSetCurrentProvider = useCallback((providerId: string) => {
+    const provider = providerMap.get(providerId);
+    if (provider) void setCurrentProvider(provider);
+  }, [providerMap, setCurrentProvider]);
+
+  const handleHealthCheckProvider = useCallback((providerId: string) => {
+    const provider = providerMap.get(providerId);
+    if (provider) void healthCheckProvider(provider);
+  }, [providerMap, healthCheckProvider]);
+
+  const handleDeleteProvider = useCallback((providerId: string) => {
+    const provider = providerMap.get(providerId);
+    if (provider) setProviderPendingDelete(provider);
+  }, [providerMap]);
 
   useEffect(() => {
     if (!editorOpen) return;
@@ -196,45 +201,42 @@ export function ModelsPage() {
     reorderProviders
   });
 
-  const toast = <NotificationToast message={message} messageClassName={messageClassName} />;
+  const toast = <NotificationToast message={message} messageClassName={messageClassName} onDismiss={dismissMessage} />;
 
   return (
     <div className="models-page">
-      {showImportPrompt ? (
-        <div className="confirm-overlay" role="presentation">
-          <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="import-codex-title">
-            <div className="confirm-dialog-copy">
-              <strong id="import-codex-title">导入 codex 配置？</strong>
-              <span>Claude 当前没有模型配置，可以从 codex 配置复制一份过来。</span>
-            </div>
-            <div className="confirm-dialog-actions">
-              <button
-                className="soft-button"
-                type="button"
-                onClick={() => {
-                  setDismissedImportPrompt(true);
-                  setShowImportPrompt(false);
-                }}
-                disabled={importingProviders}
-              >
-                取消
-              </button>
-              <button
-                className="primary-button"
-                type="button"
-                onClick={async () => {
-                  await importFromCodexToClaude();
-                  setDismissedImportPrompt(false);
-                  setShowImportPrompt(false);
-                }}
-                disabled={importingProviders}
-              >
-                {importingProviders ? "导入中" : "导入"}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <ConfirmDialog
+        open={showImportPrompt}
+        title="导入 codex 配置？"
+        description="Claude 当前没有模型配置，可以从 codex 配置复制一份过来。"
+        confirmLabel={importingProviders ? "导入中" : "导入"}
+        busy={importingProviders}
+        onCancel={() => {
+          setDismissedImportPrompt(true);
+          setShowImportPrompt(false);
+        }}
+        onConfirm={async () => {
+          await importFromCodexToClaude();
+          setDismissedImportPrompt(false);
+          setShowImportPrompt(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(providerPendingDelete)}
+        title="删除配置？"
+        description={`将删除 ${providerPendingDelete?.name || providerPendingDelete?.id || "该配置"} 及其保存的模型列表和 token。`}
+        confirmLabel={busy ? "删除中" : "删除"}
+        danger
+        busy={busy}
+        onCancel={() => setProviderPendingDelete(null)}
+        onConfirm={async () => {
+          const provider = providerPendingDelete;
+          if (!provider) return;
+          await removeProvider(provider.id);
+          setProviderPendingDelete(null);
+        }}
+      />
 
       {!editorOpen ? (
         <section className="configs-board">
@@ -332,21 +334,19 @@ export function ModelsPage() {
                 </span>
               </label>
 
-              <button
-                className="soft-button toolbar-icon-button restart-codex-button"
-                type="button"
-                data-tooltip={
-                  activeTool === "claude"
-                    ? "Claude Code 运行在终端中，无需重启"
-                    : restarting ? "正在重启 Codex" : "重启 Codex"
-                }
-                data-tooltip-placement="left"
-                aria-label={activeTool === "claude" ? "Claude Code 运行在终端中，无需重启" : "重启 Codex"}
-                onClick={() => void restartCodex()}
-                disabled={busy || restarting || activeTool === "claude"}
-              >
-                <Power size={17} />
-              </button>
+              {activeTool === "codex" ? (
+                <button
+                  className="soft-button toolbar-icon-button restart-codex-button"
+                  type="button"
+                  data-tooltip={restarting ? "正在重启 Codex" : "重启 Codex"}
+                  data-tooltip-placement="left"
+                  aria-label="重启 Codex"
+                  onClick={() => void restartCodex()}
+                  disabled={busy || restarting}
+                >
+                  <Power size={17} />
+                </button>
+              ) : null}
               <button
                 className="soft-button toolbar-icon-button"
                 type="button"
@@ -394,11 +394,11 @@ export function ModelsPage() {
                   }
                   healthStatus={healthCheckResults[provider.id]}
                   onPointerDown={(event) => handleProviderPointerDown(event, provider.id)}
-                  onEdit={() => void openEditProvider(provider)}
-                  onCopy={() => void copyProvider(provider.id)}
-                  onSetCurrent={() => void setCurrentProvider(provider)}
-                  onHealthCheck={() => void healthCheckProvider(provider)}
-                  onDelete={() => void removeProvider(provider.id)}
+                  onEdit={() => handleEditProvider(provider.id)}
+                  onCopy={() => handleCopyProvider(provider.id)}
+                  onSetCurrent={() => handleSetCurrentProvider(provider.id)}
+                  onHealthCheck={() => handleHealthCheckProvider(provider.id)}
+                  onDelete={() => handleDeleteProvider(provider.id)}
                 />
               ))
             ) : (
@@ -572,7 +572,7 @@ export function ModelsPage() {
               <button
                 className="danger-button"
                 type="button"
-                onClick={() => void removeProvider(selected.id)}
+                onClick={() => setProviderPendingDelete(selected)}
                 disabled={busy}
               >
                 <Trash2 size={17} />

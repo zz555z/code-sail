@@ -1,12 +1,11 @@
 use anyhow::{anyhow, bail, Context, Result};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::Duration;
 
 use crate::codex_config::{
     codex_config_path, normalize_model_list_base_url, parse_model_ids, resolve_token_for_request,
 };
+use crate::http;
 use crate::storage::{
     open_database, provider_belongs_to_tool, replace_provider_models, ToolType,
 };
@@ -58,11 +57,7 @@ async fn fetch_provider_models(
     let original_id = input.original_id.as_deref().map(str::trim).unwrap_or_default();
     let token = resolve_token_for_request(&conn, &config_path, original_id, input.token.as_deref())?;
     let models_url = format!("{}/models", base_url.trim_end_matches('/'));
-    let client = Client::builder()
-        .connect_timeout(Duration::from_secs(8))
-        .timeout(Duration::from_secs(30))
-        .build()
-        .context("failed to build HTTP client")?;
+    let client = http::shared_client();
 
     log::debug!(
         "fetch_models request: method=GET models_url={} token_present=true",

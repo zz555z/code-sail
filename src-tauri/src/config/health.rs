@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
-use reqwest::Client;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::{time::Duration, time::Instant};
+use std::time::Instant;
 
 use crate::codex_config::{
     codex_config_path, normalize_model_list_base_url, resolve_token_for_request,
 };
+use crate::http;
 use crate::storage::open_database;
 
 #[derive(Debug, Deserialize)]
@@ -60,11 +60,7 @@ async fn check_model_list_health_inner(
     }
 
     let models_url = format!("{}/models", base_url.trim_end_matches('/'));
-    let client = Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10))
-        .build()
-        .context("failed to build HTTP client")?;
+    let client = http::health_check_client();
 
     log::debug!(
         "health check request: method=GET url={} token_present={}",

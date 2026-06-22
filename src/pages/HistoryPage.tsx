@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -8,14 +9,16 @@ import {
   RefreshCw,
   Trash2
 } from "lucide-react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NotificationToast } from "../components/NotificationToast";
 import { useActiveToolContext } from "../contexts/ActiveToolContext";
 import { useHistoryContext } from "../contexts/HistoryContext";
 import { useMessage } from "../contexts/MessageContext";
 import { formatHistoryTime, roleClass, roleLabel } from "../lib/format";
+import type { HistoryProviderGroup, HistorySessionSummary } from "../lib/types";
 
 export function HistoryPage() {
-  const { message, messageClassName } = useMessage();
+  const { message, messageClassName, dismissMessage } = useMessage();
   const { activeTool } = useActiveToolContext();
   const {
     historySessionCount,
@@ -33,11 +36,45 @@ export function HistoryPage() {
     removeHistorySession,
     removeHistoryProvider
   } = useHistoryContext();
+  const [sessionPendingDelete, setSessionPendingDelete] = useState<HistorySessionSummary | null>(null);
+  const [providerPendingDelete, setProviderPendingDelete] = useState<HistoryProviderGroup | null>(null);
   const activeToolName = activeTool === "claude" ? "Claude" : "Codex";
   const historyRootLabel = activeTool === "claude" ? "~/.claude/projects" : "~/.codex/sessions";
 
   return (
     <section className="history-board">
+      <ConfirmDialog
+        open={Boolean(sessionPendingDelete)}
+        title="删除会话？"
+        description={`将删除会话 ${sessionPendingDelete?.title || sessionPendingDelete?.sessionId || ""}。`}
+        confirmLabel={historyBusy ? "删除中" : "删除"}
+        danger
+        busy={historyBusy}
+        onCancel={() => setSessionPendingDelete(null)}
+        onConfirm={async () => {
+          const session = sessionPendingDelete;
+          if (!session) return;
+          await removeHistorySession(session);
+          setSessionPendingDelete(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(providerPendingDelete)}
+        title="删除分组历史？"
+        description={`将删除 ${providerPendingDelete?.provider || "该分组"} 下的全部历史会话。`}
+        confirmLabel={historyBusy ? "删除中" : "删除"}
+        danger
+        busy={historyBusy}
+        onCancel={() => setProviderPendingDelete(null)}
+        onConfirm={async () => {
+          const group = providerPendingDelete;
+          if (!group) return;
+          await removeHistoryProvider(group);
+          setProviderPendingDelete(null);
+        }}
+      />
+
       <header className="board-head">
         <div className="panel-title">
           <History size={18} />
@@ -62,7 +99,7 @@ export function HistoryPage() {
         </div>
       </header>
 
-      <NotificationToast message={message} messageClassName={messageClassName} />
+      <NotificationToast message={message} messageClassName={messageClassName} onDismiss={dismissMessage} />
 
       <div className="history-layout">
         <aside className="history-provider-list" aria-label="Provider 会话分组">
@@ -89,7 +126,7 @@ export function HistoryPage() {
                       data-tooltip="删除该分组历史"
                       data-tooltip-placement="left"
                       aria-label={`删除 ${group.provider} 分组历史`}
-                      onClick={() => void removeHistoryProvider(group)}
+                      onClick={() => setProviderPendingDelete(group)}
                       disabled={historyLoading || historyBusy}
                     >
                       <Trash2 size={15} />
@@ -159,7 +196,7 @@ export function HistoryPage() {
                     data-tooltip="删除会话"
                     data-tooltip-placement="left"
                     aria-label="删除会话"
-                    onClick={() => void removeHistorySession(selectedHistorySession)}
+                    onClick={() => setSessionPendingDelete(selectedHistorySession)}
                     disabled={historyLoading || historyBusy}
                   >
                     <Trash2 size={15} />

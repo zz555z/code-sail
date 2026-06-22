@@ -1,14 +1,16 @@
 import type { DeleteHistoryResponse } from "./types";
 
+const historyTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit"
+});
+
 export function formatHistoryTime(timestamp: number | null) {
   if (!timestamp) return "未知时间";
   const milliseconds = timestamp > 10_000_000_000 ? timestamp : timestamp * 1000;
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date(milliseconds));
+  return historyTimeFormatter.format(new Date(milliseconds));
 }
 
 export function roleLabel(role: string) {

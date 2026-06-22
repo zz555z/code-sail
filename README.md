@@ -1,14 +1,15 @@
 # CodeSail
 
-CodeSail 是一个用于管理 Codex CLI 配置的跨平台桌面应用。它把 provider、model、token、本地配置文件和历史会话集中到一个清晰的图形界面里，适合经常切换模型和供应商的 Codex 用户。
+CodeSail 是一个用于管理 Codex CLI 和 Claude Code 配置的跨平台桌面应用。它把 provider、model、token、本地配置文件和历史会话集中到一个清晰的图形界面里，适合经常切换模型和供应商的本地 AI 工具用户。
 
 > 当前项目处于早期版本，主要面向本地配置管理。欢迎在开源后继续完善安装包、自动更新和更多平台适配。
 
 ## 功能特性
 
-- 概览 Codex、Node.js、npm 的可用状态和版本
+- 概览 Codex、Claude Code、Node.js、npm 的可用状态和版本
 - 查看当前 app 版本、当前设置模型和历史记录摘要
 - 管理 Codex CLI 的 `model_providers`
+- 管理 Claude Code 的 API 相关环境配置
 - 新增、编辑、复制、删除 provider 配置
 - 拉取 provider 的 `/models` 列表并保存模型
 - 一键设置当前 provider 和 model
@@ -16,7 +17,8 @@ CodeSail 是一个用于管理 Codex CLI 配置的跨平台桌面应用。它把
 - 保存 token，并在切换当前模型时同步 `auth.json`
 - 查看、恢复、删除本地 Codex 历史会话
 - 支持浅色、深色、跟随系统主题
-- 支持在终端中打开或重启 Codex
+- 支持在终端中打开 Codex 或 Claude Code，并支持重启 Codex
+- 支持系统托盘快速切换当前模型配置
 
 ## 截图
 
@@ -51,6 +53,11 @@ CodeSail 会读取并维护 Codex CLI 使用的本地配置：
 - 支持 `CODEX_CONFIG` 指定自定义 `config.toml`
 - 本地 provider 数据：`~/.codex/codex-config-desktop.sqlite3`
 - 本地 token key：`~/.codex/codex-config-desktop.key`
+
+Claude Code 配置会同步到：
+
+- 默认设置文件：`~/.claude/settings.json`
+- 默认历史目录：`~/.claude/projects`
 
 数据库文件名目前保留旧项目名，是为了兼容已经安装使用过的本地数据，避免项目改名后丢失已有 provider 和 token。
 
@@ -94,17 +101,10 @@ npm run dev
 
 ## 构建
 
-校验前端构建：
+校验前端构建和后端测试：
 
 ```bash
-npm run build
-```
-
-校验 Rust 后端：
-
-```bash
-cd src-tauri
-cargo check
+npm run check
 ```
 
 打包桌面应用：
@@ -137,7 +137,9 @@ xattr -cr /Applications/CodeSail.app
 │   ├── App.tsx           # 主界面
 │   └── styles.css        # 界面样式
 ├── src-tauri/            # Tauri/Rust 后端
-│   ├── src/config.rs     # Codex 配置、provider、token、运行环境检测
+│   ├── src/config/       # provider、模型列表、健康检查、更新检查
+│   ├── src/codex_config.rs
+│   ├── src/claude_config.rs
 │   ├── src/history.rs    # Codex 历史会话读取和管理
 │   └── tauri.conf.json   # Tauri 应用配置
 ├── package.json
@@ -147,9 +149,11 @@ xattr -cr /Applications/CodeSail.app
 ## 安全说明
 
 - CodeSail 不上传 provider 配置或 token
-- token 保存在本机 SQLite 数据库中，并使用本地 key 加密
+- token 保存在本机 SQLite 数据库中，并使用同目录的本地 key 加密
 - `auth.json` 只同步当前 provider 所需的 token
 - 写入 `config.toml` 前会创建备份文件
+
+当前 token 加密主要避免明文出现在数据库里；本地 key 仍存放在用户配置目录中，不等同于 macOS Keychain 或 Windows Credential Manager 级别的系统密钥保护。
 
 请仍然把 `~/.codex` 视为敏感目录，不要把其中的数据库、key、`auth.json` 或包含 token 的配置提交到 GitHub。
 
@@ -167,9 +171,7 @@ xattr -cr /Applications/CodeSail.app
 欢迎提交 issue 或 pull request。建议在提交前至少运行：
 
 ```bash
-npm run build
-cd src-tauri
-cargo check
+npm run check
 ```
 
 如果改动涉及 UI，请附上截图或录屏，方便确认布局和交互效果。

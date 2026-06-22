@@ -1,23 +1,29 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
+use std::sync::mpsc;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    App, Emitter, Manager,
+    App, AppHandle, Emitter, Manager,
 };
 
-use crate::codex_config::{codex_config_path, sync_codex_files};
+use crate::codex_config::{codex_config_path, import_codex_config_if_needed, sync_codex_files};
 use crate::storage::{
     collect_providers_from_database, get_active_model, get_active_provider, get_active_tool,
-    open_database, set_active_model, set_active_provider, ToolType,
+    open_database, set_active_model, set_active_provider, set_active_tool, ToolType,
 };
-use crate::terminal::{open_codex_terminal_inner, restart_codex_app_inner};
+use crate::tasks::run_background_task;
+use crate::terminal::{
+    open_claude_terminal_inner, open_codex_terminal_inner, restart_codex_app_inner,
+};
 
+const TRAY_ID: &str = "codesail-main-tray";
 const MENU_OPEN_APP: &str = "open_app";
 const MENU_OPEN_TERMINAL: &str = "open_terminal";
 const MENU_RESTART_CODEX: &str = "restart_codex";
 const MENU_QUIT: &str = "quit";
 const SWITCH_PROVIDER_PREFIX: &str = "switch_provider:";
+const SWITCH_TOOL_PREFIX: &str = "switch_tool:";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,13 +36,9 @@ struct TraySwitchPayload {
 pub fn setup_tray(app: &App) -> Result<()> {
     let menu = build_tray_menu(app)?;
 
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .context("no default window icon")?;
-
-    TrayIconBuilder::new()
-        .icon(icon)
+    TrayIconBuilder::with_id(TRAY_ID)
+        .icon(tauri::include_image!("./icons/tray-template.png"))
+        .icon_as_template(true)
         .tooltip("CodeSail")
         .menu(&menu)
         .on_menu_event(|app, event| {
@@ -47,19 +49,30 @@ pub fn setup_tray(app: &App) -> Result<()> {
                 return;
             }
 
+            if let Some(tool_name) = id.strip_prefix(SWITCH_TOOL_PREFIX) {
+                handle_switch_tool(app, tool_name);
+                return;
+            }
+
             match id {
                 MENU_OPEN_APP => show_main_window(app),
                 MENU_OPEN_TERMINAL => {
-                    std::thread::spawn(|| {
-                        if let Err(e) = open_codex_terminal_inner() {
-                            log::error!("tray open terminal failed: {:?}", e);
+                    std::thread::spawn({
+                        let app = app.clone();
+                        move || {
+                            if let Err(e) = open_active_tool_terminal_inner(&app) {
+                                log::error!("tray open terminal failed: {:?}", e);
+                            }
                         }
                     });
                 }
                 MENU_RESTART_CODEX => {
-                    std::thread::spawn(|| {
-                        if let Err(e) = restart_codex_app_inner() {
-                            log::error!("tray restart codex failed: {:?}", e);
+                    std::thread::spawn({
+                        let app = app.clone();
+                        move || {
+                            if let Err(e) = restart_active_tool_inner(&app) {
+                                log::error!("tray restart failed: {:?}", e);
+                            }
                         }
                     });
                 }
@@ -88,9 +101,74 @@ pub fn setup_tray(app: &App) -> Result<()> {
     Ok(())
 }
 
-fn build_tray_menu(app: &App) -> Result<tauri::menu::Menu<tauri::Wry>> {
+#[tauri::command]
+pub async fn refresh_tray_menu(app: AppHandle) -> Result<(), String> {
+    run_background_task("codesail-refresh-tray-menu", move || {
+        refresh_tray_menu_inner(&app)
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+fn refresh_tray_menu_inner(app: &AppHandle) -> Result<()> {
+    let app = app.clone();
+    let app_for_callback = app.clone();
+    let (tx, rx) = mpsc::channel();
+
+    app.run_on_main_thread(move || {
+        let result =
+            refresh_tray_menu_on_main_thread(&app_for_callback).map_err(|error| error.to_string());
+        let _ = tx.send(result);
+    })
+    .context("failed to schedule tray menu refresh")?;
+
+    match rx
+        .recv()
+        .context("failed to receive tray menu refresh result")?
+    {
+        Ok(()) => Ok(()),
+        Err(error) => bail!(error),
+    }
+}
+
+fn refresh_tray_menu_on_main_thread(app: &AppHandle) -> Result<()> {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return Ok(());
+    };
+    let menu = build_tray_menu(app)?;
+    tray.set_menu(Some(menu))
+        .context("failed to refresh tray menu")?;
+    Ok(())
+}
+
+fn open_active_tool_terminal_inner(app: &AppHandle) -> Result<()> {
+    match active_tool_from_database()? {
+        ToolType::Codex => open_codex_terminal_inner(),
+        ToolType::Claude => open_claude_terminal_inner(),
+    }?;
+    refresh_tray_menu_inner(app)?;
+    Ok(())
+}
+
+fn restart_active_tool_inner(app: &AppHandle) -> Result<()> {
+    if active_tool_from_database()? == ToolType::Codex {
+        restart_codex_app_inner()?;
+    }
+    refresh_tray_menu_inner(app)?;
+    Ok(())
+}
+
+fn active_tool_from_database() -> Result<ToolType> {
     let config_path = codex_config_path()?;
     let conn = open_database(&config_path)?;
+    import_codex_config_if_needed(&conn, &config_path)?;
+    get_active_tool(&conn)
+}
+
+fn build_tray_menu<M: Manager<tauri::Wry>>(app: &M) -> Result<tauri::menu::Menu<tauri::Wry>> {
+    let config_path = codex_config_path()?;
+    let conn = open_database(&config_path)?;
+    import_codex_config_if_needed(&conn, &config_path)?;
     let active_tool = get_active_tool(&conn).unwrap_or_default();
     let active_provider = get_active_provider(&conn, active_tool)?.unwrap_or_default();
     let active_model = get_active_model(&conn, active_tool)?.unwrap_or_default();
@@ -101,19 +179,11 @@ fn build_tray_menu(app: &App) -> Result<tauri::menu::Menu<tauri::Wry>> {
         ToolType::Claude => "Claude",
     };
 
-    let active_label = if active_provider.is_empty() {
-        format!("[{tool_label}] 未选择模型")
+    // Status line - 只显示模型名称
+    let active_label = if active_model.is_empty() {
+        "未选择模型".to_string()
     } else {
-        let provider_name = providers
-            .iter()
-            .find(|p| p.id == active_provider)
-            .and_then(|p| p.name.as_deref())
-            .unwrap_or(&active_provider);
-        if active_model.is_empty() {
-            format!("[{tool_label}] {provider_name}")
-        } else {
-            format!("[{tool_label}] {provider_name} / {active_model}")
-        }
+        active_model.clone()
     };
 
     let status_item = MenuItemBuilder::new(active_label)
@@ -121,7 +191,22 @@ fn build_tray_menu(app: &App) -> Result<tauri::menu::Menu<tauri::Wry>> {
         .enabled(false)
         .build(app)?;
 
-    let mut switch_submenu_builder = SubmenuBuilder::new(app, "切换模型");
+    // 切换配置 submenu (Codex / Claude)
+    let codex_item = MenuItemBuilder::new("Codex")
+        .id(format!("{}codex", SWITCH_TOOL_PREFIX))
+        .enabled(active_tool != ToolType::Codex)
+        .build(app)?;
+    let claude_item = MenuItemBuilder::new("Claude")
+        .id(format!("{}claude", SWITCH_TOOL_PREFIX))
+        .enabled(active_tool != ToolType::Claude)
+        .build(app)?;
+    let switch_config_submenu = SubmenuBuilder::new(app, "切换配置")
+        .item(&codex_item)
+        .item(&claude_item)
+        .build()?;
+
+    // 切换模型 submenu (providers for active tool)
+    let mut switch_model_submenu_builder = SubmenuBuilder::new(app, "切换模型");
     for provider in &providers {
         let is_active = provider.id == active_provider;
         let display_name = provider.name.as_deref().unwrap_or(&provider.id);
@@ -134,25 +219,23 @@ fn build_tray_menu(app: &App) -> Result<tauri::menu::Menu<tauri::Wry>> {
             .id(format!("{}{}", SWITCH_PROVIDER_PREFIX, provider.id))
             .enabled(!is_active)
             .build(app)?;
-        switch_submenu_builder = switch_submenu_builder.item(&item);
+        switch_model_submenu_builder = switch_model_submenu_builder.item(&item);
     }
     if providers.is_empty() {
         let empty_item = MenuItemBuilder::new("暂无配置")
             .id("no_providers")
             .enabled(false)
             .build(app)?;
-        switch_submenu_builder = switch_submenu_builder.item(&empty_item);
+        switch_model_submenu_builder = switch_model_submenu_builder.item(&empty_item);
     }
-    let switch_submenu = switch_submenu_builder.build()?;
+    let switch_model_submenu = switch_model_submenu_builder.build()?;
 
-    let terminal_label = format!("打开 {} 终端", tool_label);
-    let restart_label = format!("重启 {}", tool_label);
+    // Tool-specific actions
+    let terminal_label = format!("打开 {} CLI", tool_label);
     let open_terminal = MenuItemBuilder::new(terminal_label)
         .id(MENU_OPEN_TERMINAL)
         .build(app)?;
-    let restart_codex = MenuItemBuilder::new(restart_label)
-        .id(MENU_RESTART_CODEX)
-        .build(app)?;
+
     let open_app = MenuItemBuilder::new("打开 CodeSail")
         .id(MENU_OPEN_APP)
         .build(app)?;
@@ -164,13 +247,23 @@ fn build_tray_menu(app: &App) -> Result<tauri::menu::Menu<tauri::Wry>> {
     let separator2 = PredefinedMenuItem::separator(app)?;
     let separator3 = PredefinedMenuItem::separator(app)?;
 
-    let menu = MenuBuilder::new(app)
+    let mut menu_builder = MenuBuilder::new(app)
         .item(&status_item)
         .item(&separator1)
-        .item(&switch_submenu)
+        .item(&switch_config_submenu)
+        .item(&switch_model_submenu)
         .item(&separator2)
-        .item(&open_terminal)
-        .item(&restart_codex)
+        .item(&open_terminal);
+
+    // Add restart option only for Codex
+    if active_tool == ToolType::Codex {
+        let restart_codex = MenuItemBuilder::new("重启 Codex")
+            .id(MENU_RESTART_CODEX)
+            .build(app)?;
+        menu_builder = menu_builder.item(&restart_codex);
+    }
+
+    let menu = menu_builder
         .item(&separator3)
         .item(&open_app)
         .item(&quit)
@@ -190,9 +283,28 @@ fn handle_switch_provider(app: &tauri::AppHandle, provider_id: &str) {
     });
 }
 
+fn handle_switch_tool(app: &tauri::AppHandle, tool_name: &str) {
+    let tool_type = match tool_name {
+        "codex" => ToolType::Codex,
+        "claude" => ToolType::Claude,
+        _ => {
+            log::error!("tray switch tool: unknown tool {}", tool_name);
+            return;
+        }
+    };
+    let app_handle = app.clone();
+
+    std::thread::spawn(move || {
+        if let Err(e) = switch_tool_inner(&app_handle, tool_type) {
+            log::error!("tray switch tool failed: {:?}", e);
+        }
+    });
+}
+
 fn switch_provider_inner(app: &tauri::AppHandle, provider_id: &str) -> Result<()> {
     let config_path = codex_config_path()?;
     let conn = open_database(&config_path)?;
+    import_codex_config_if_needed(&conn, &config_path)?;
     let active_tool = get_active_tool(&conn).unwrap_or_default();
 
     let providers = collect_providers_from_database(&conn, active_tool)?;
@@ -221,6 +333,7 @@ fn switch_provider_inner(app: &tauri::AppHandle, provider_id: &str) -> Result<()
         model: provider.model.clone(),
     };
 
+    refresh_tray_menu_inner(app)?;
     let _ = app.emit("tray-switch-provider", &payload);
 
     log::info!(
@@ -228,6 +341,34 @@ fn switch_provider_inner(app: &tauri::AppHandle, provider_id: &str) -> Result<()
         provider.id,
         provider_name
     );
+
+    Ok(())
+}
+
+fn switch_tool_inner(app: &tauri::AppHandle, tool_type: ToolType) -> Result<()> {
+    let config_path = codex_config_path()?;
+    let conn = open_database(&config_path)?;
+    import_codex_config_if_needed(&conn, &config_path)?;
+
+    set_active_tool(&conn, tool_type)?;
+
+    // Sync config for the newly active tool
+    match tool_type {
+        ToolType::Codex => sync_codex_files(&conn, &config_path)?,
+        ToolType::Claude => {
+            crate::claude_config::sync_claude_settings(&conn, &config_path)?;
+        }
+    }
+
+    refresh_tray_menu_inner(app)?;
+
+    let tool_name = match tool_type {
+        ToolType::Codex => "codex",
+        ToolType::Claude => "claude",
+    };
+    let _ = app.emit("tray-switch-tool", tool_name);
+
+    log::info!("tray switched tool: {}", tool_name);
 
     Ok(())
 }

@@ -1,7 +1,9 @@
 mod claude_config;
 mod codex_config;
 mod config;
+mod file_util;
 mod history;
+mod http;
 mod storage;
 mod tasks;
 mod terminal;
@@ -19,6 +21,7 @@ use history::{
     delete_history_provider, delete_history_session,
     list_tool_history_sessions, read_history_session, resume_history_session,
 };
+use tray::refresh_tray_menu;
 
 fn main() {
     env_logger::init();
@@ -49,6 +52,7 @@ fn main() {
             open_codex_terminal,
             open_claude_terminal,
             open_tool_install,
+            refresh_tray_menu,
             list_tool_history_sessions,
             read_history_session,
             resume_history_session,

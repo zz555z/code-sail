@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { getActiveTool, setActiveTool } from "../lib/api";
+import { getActiveTool, refreshTrayMenu, setActiveTool } from "../lib/api";
 import type { ToolType } from "../lib/types";
 import { errorMessage } from "../lib/utils";
 
@@ -22,6 +22,9 @@ export function useActiveTool() {
     try {
       await setActiveTool(tool);
       setActiveToolState(tool);
+      void refreshTrayMenu().catch((error) => {
+        console.warn("Failed to refresh tray menu:", errorMessage(error));
+      });
     } finally {
       setSwitching(false);
     }

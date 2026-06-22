@@ -14,7 +14,7 @@ pub use update::{check_app_update, open_app_update};
 use anyhow::Result;
 use serde::Serialize;
 
-use crate::codex_config::codex_config_path;
+use crate::codex_config::{codex_config_path, import_codex_config_if_needed};
 use crate::storage::{
     collect_providers_from_database, get_active_model, get_active_provider, get_active_tool,
     open_database,
@@ -112,6 +112,7 @@ fn load_app_state() -> Result<AppState> {
     let config_path = codex_config_path()?;
     let config_exists = config_path.exists();
     let conn = open_database(&config_path)?;
+    import_codex_config_if_needed(&conn, &config_path)?;
     let active_tool = get_active_tool(&conn)?;
 
     Ok(AppState {

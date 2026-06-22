@@ -1,4 +1,5 @@
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { History, LayoutDashboard, Settings2 } from "lucide-react";
 import packageJson from "../package.json";
@@ -21,6 +22,11 @@ import { OverviewPage } from "./pages/OverviewPage";
 import type { ToolType } from "./lib/types";
 
 type PageId = "overview" | "models" | "history";
+type TraySwitchPayload = {
+  providerId: string;
+  providerName: string;
+  model: string | null;
+};
 
 function startWindowDrag(event: MouseEvent<HTMLElement>) {
   if (event.button !== 0) return;
@@ -29,8 +35,9 @@ function startWindowDrag(event: MouseEvent<HTMLElement>) {
 
 export function App() {
   const [activePage, setActivePage] = useState<PageId>("overview");
+  const [initialLoading, setInitialLoading] = useState(true);
   const appVersion = packageJson.version;
-  const { message, setMessage, setPaused: setMessagePaused, messageClassName } = useTransientMessage();
+  const { message, setMessage, setPaused: setMessagePaused, dismissMessage, messageClassName } = useTransientMessage();
   const { themePreference, cycleTheme } = useThemePreference();
   const { activeTool, switching: toolSwitching, loadActiveTool, switchTool } = useActiveTool();
   const providerEditor = useProviderEditor({ setMessage, setMessagePaused });
@@ -45,12 +52,39 @@ export function App() {
   } = useAppUpdate({ appVersion, setMessage });
 
   useEffect(() => {
-    void loadActiveTool();
-    void providerEditor.refresh();
+    const initialize = async () => {
+      try {
+        // 只等待关键数据加载完成
+        await Promise.allSettled([
+          loadActiveTool(),
+          providerEditor.refresh()
+        ]);
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+    void initialize();
+
+    // 非关键数据在后台加载
     void refreshToolStatuses();
     void refreshAppUpdate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const unlisten = listen<TraySwitchPayload>("tray-switch-provider", (event) => {
+      void providerEditor.refresh({ preferredId: event.payload.providerId });
+      setMessage(
+        event.payload.model
+          ? `已通过托盘切换到 ${event.payload.providerName} / ${event.payload.model}。`
+          : `已通过托盘切换到 ${event.payload.providerName}。`
+      );
+    });
+
+    return () => {
+      void unlisten.then((stopListening) => stopListening());
+    };
+  }, [providerEditor.refresh, setMessage]);
 
   const handleToolSwitch = useCallback(async (tool: ToolType) => {
     setMessage("");
@@ -65,8 +99,8 @@ export function App() {
   }, [activePage, activeTool, historySessions.refreshHistory]);
 
   const messageValue = useMemo(
-    () => ({ message, messageClassName, setMessage, setMessagePaused }),
-    [message, messageClassName, setMessage, setMessagePaused]
+    () => ({ message, messageClassName, setMessage, setMessagePaused, dismissMessage }),
+    [message, messageClassName, setMessage, setMessagePaused, dismissMessage]
   );
 
   const appServicesValue = useMemo(
@@ -99,6 +133,18 @@ export function App() {
       switchTool: handleToolSwitch
     }),
     [activeTool, toolSwitching, handleToolSwitch]
+  );
+
+  const providerEditorValue = useMemo(
+    () => providerEditor,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [providerEditor.state, providerEditor.selected, providerEditor.selectedId, providerEditor.draft, providerEditor.models, providerEditor.modelValue, providerEditor.providerCount, providerEditor.activeProvider, providerEditor.editorOpen, providerEditor.busy, providerEditor.importingProviders, providerEditor.restarting, providerEditor.loadingModels, providerEditor.modelMenuOpen, providerEditor.tokenVisible, providerEditor.updateConfigFile, providerEditor.canSave, providerEditor.healthCheckResults]
+  );
+
+  const historyValue = useMemo(
+    () => historySessions,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [historySessions.historyGroups, historySessions.historyConversation, historySessions.selectedHistoryPath, historySessions.selectedHistorySession, historySessions.expandedHistoryProviders, historySessions.historyLoading, historySessions.historyBusy, historySessions.historyProviderStats, historySessions.topHistoryProviderStats, historySessions.historySessionCount, historySessions.historyMessageCount, historySessions.latestHistorySession]
   );
 
   const navItems: Array<{ id: PageId; label: string; icon: ReactNode }> = useMemo(
@@ -136,27 +182,36 @@ export function App() {
       <ErrorBoundary>
         <ActiveToolProvider value={activeToolValue}>
           <MessageProvider value={messageValue}>
-            <ProviderEditorProvider value={providerEditor}>
+            <ProviderEditorProvider value={providerEditorValue}>
               <AppServicesProvider value={appServicesValue}>
-                <HistoryProvider value={historySessions}>
+                <HistoryProvider value={historyValue}>
                   <section className="workbench">
-                    {activePage === "overview" ? (
-                      <ErrorBoundary>
-                        <OverviewPage themePreference={themePreference} onCycleTheme={cycleTheme} />
-                      </ErrorBoundary>
-                    ) : null}
+                    {initialLoading ? (
+                      <div className="initial-loading">
+                        <div className="loading-spinner" />
+                        <span>正在加载配置...</span>
+                      </div>
+                    ) : (
+                      <>
+                        {activePage === "overview" ? (
+                          <ErrorBoundary>
+                            <OverviewPage themePreference={themePreference} onCycleTheme={cycleTheme} />
+                          </ErrorBoundary>
+                        ) : null}
 
-                    {activePage === "history" ? (
-                      <ErrorBoundary>
-                        <HistoryPage />
-                      </ErrorBoundary>
-                    ) : null}
+                        {activePage === "history" ? (
+                          <ErrorBoundary>
+                            <HistoryPage />
+                          </ErrorBoundary>
+                        ) : null}
 
-                    {activePage === "models" ? (
-                      <ErrorBoundary>
-                        <ModelsPage />
-                      </ErrorBoundary>
-                    ) : null}
+                        {activePage === "models" ? (
+                          <ErrorBoundary>
+                            <ModelsPage />
+                          </ErrorBoundary>
+                        ) : null}
+                      </>
+                    )}
                   </section>
                 </HistoryProvider>
               </AppServicesProvider>

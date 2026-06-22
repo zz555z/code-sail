@@ -123,6 +123,10 @@ export async function openToolInstall(command: string): Promise<void> {
   });
 }
 
+export async function refreshTrayMenu(): Promise<void> {
+  await invokeCommand<void>("refresh_tray_menu");
+}
+
 export async function listHistorySessions(toolType: ToolType): Promise<HistoryProviderGroup[]> {
   return await invokeCommand<HistoryProviderGroup[]>("list_tool_history_sessions", { toolType });
 }

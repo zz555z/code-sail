@@ -29,6 +29,16 @@ const fallbackToolStatuses: ToolStatus[] = [
     installUrl: "https://developers.openai.com/codex/"
   },
   {
+    name: "Claude Code",
+    command: "claude",
+    available: false,
+    version: null,
+    detail: null,
+    installLabel: "安装",
+    installHint: "打开 Claude Code 安装说明",
+    installUrl: "https://docs.anthropic.com/en/docs/claude-code/overview"
+  },
+  {
     name: "Node.js",
     command: "node",
     available: false,
@@ -56,7 +66,7 @@ type OverviewPageProps = {
 };
 
 export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProps) {
-  const { message, messageClassName } = useMessage();
+  const { message, messageClassName, dismissMessage } = useMessage();
   const { activeTool } = useActiveToolContext();
   const { state, activeProvider, busy, refresh } = useProviderEditorContext();
   const {
@@ -99,11 +109,16 @@ export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProp
         </div>
 
         <div className="board-actions">
-          <label className="theme-icon-button" data-tooltip="切换主题" data-tooltip-placement="left">
-            <button type="button" aria-label={`切换主题，当前为${themeLabel(themePreference)}`} onClick={onCycleTheme}>
-              {themeIcon(themePreference)}
-            </button>
-          </label>
+          <button
+            className="soft-button toolbar-icon-button"
+            type="button"
+            data-tooltip="切换主题"
+            data-tooltip-placement="left"
+            aria-label={`切换主题，当前为${themeLabel(themePreference)}`}
+            onClick={onCycleTheme}
+          >
+            {themeIcon(themePreference)}
+          </button>
           <button
             className="soft-button toolbar-icon-button"
             type="button"
@@ -123,7 +138,7 @@ export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProp
         </div>
       </header>
 
-      <NotificationToast message={message} messageClassName={messageClassName} />
+      <NotificationToast message={message} messageClassName={messageClassName} onDismiss={dismissMessage} />
 
       <div className="overview-layout">
         <section className="overview-hero">

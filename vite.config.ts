@@ -18,7 +18,8 @@ export default defineConfig({
       output: {
         manualChunks: {
           "vendor-react": ["react", "react-dom"],
-          "vendor-icons": ["lucide-react"]
+          "vendor-icons": ["lucide-react"],
+          "vendor-tauri": ["@tauri-apps/api"]
         }
       }
     }

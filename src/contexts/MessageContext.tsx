@@ -5,6 +5,7 @@ export type MessageContextValue = {
   messageClassName: string;
   setMessage: (message: string) => void;
   setMessagePaused: (paused: boolean) => void;
+  dismissMessage: () => void;
 };
 
 const MessageContext = createContext<MessageContextValue | null>(null);

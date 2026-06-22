@@ -1,12 +1,14 @@
 {
   "name": "codesail",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
+    "generate:types": "node scripts/generate-types.mjs",
+    "check:types": "node scripts/generate-types.mjs --check",
     "build": "tsc && vite build",
-    "check": "npm run build && cd src-tauri && cargo test",
+    "check": "npm run check:types && npm run build && cd src-tauri && cargo test",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

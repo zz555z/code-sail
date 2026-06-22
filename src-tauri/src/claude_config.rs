@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
-use chrono::Local;
 use serde_json::Value;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
+use crate::file_util;
 use crate::storage::{
     get_active_model, get_active_provider, get_provider, restrict_file_permissions,
     SqliteConnection, ToolType,
@@ -150,6 +150,8 @@ fn ensure_claude_settings_shape(root: &mut Value) {
     if !map.get("env").is_some_and(Value::is_object) {
         map.insert("env".to_string(), Value::Object(serde_json::Map::new()));
     }
+    map.entry("disableDeepLinkRegistration".to_string())
+        .or_insert_with(|| Value::String("disable".to_string()));
 }
 
 fn default_claude_settings() -> Value {
@@ -159,6 +161,10 @@ fn default_claude_settings() -> Value {
         Value::String(CLAUDE_SETTINGS_SCHEMA.to_string()),
     );
     root.insert("env".to_string(), Value::Object(serde_json::Map::new()));
+    root.insert(
+        "disableDeepLinkRegistration".to_string(),
+        Value::String("disable".to_string()),
+    );
     Value::Object(root)
 }
 
@@ -168,32 +174,11 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
 
-    backup_file_if_exists(path)?;
+    file_util::backup_file_if_exists(path)?;
 
     let encoded = serde_json::to_string_pretty(value).context("failed to encode settings.json")?;
     fs::write(path, format!("{encoded}\n"))
         .with_context(|| format!("failed to write {}", path.display()))?;
     restrict_file_permissions(path)?;
-    Ok(())
-}
-
-fn backup_file_if_exists(path: &Path) -> Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let backup = PathBuf::from(format!(
-        "{}.bak.{}",
-        path.display(),
-        Local::now().format("%Y%m%d_%H%M%S")
-    ));
-    if !backup.exists() {
-        fs::copy(path, &backup).with_context(|| {
-            format!(
-                "failed to create backup {} from {}",
-                backup.display(),
-                path.display()
-            )
-        })?;
-    }
     Ok(())
 }

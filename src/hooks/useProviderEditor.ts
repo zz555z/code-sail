@@ -8,6 +8,7 @@ import {
   importCodexProvidersToClaude,
   reorderProviders as reorderProvidersCommand,
   restartCodexApp,
+  refreshTrayMenu,
   saveProvider,
   setCurrentModel as setCurrentModelCommand
 } from "../lib/api";
@@ -15,6 +16,7 @@ import { comparableDraft, draftFromProvider, emptyDraft } from "../lib/providerD
 import type { AppState, ProviderDraft, ProviderView } from "../lib/types";
 import { errorMessage } from "../lib/utils";
 import { useProviderHealth } from "./useProviderHealth";
+import { useStateWithRef } from "./useStateWithRef";
 
 type UseProviderEditorOptions = {
   setMessage: (message: string) => void;
@@ -22,8 +24,8 @@ type UseProviderEditorOptions = {
 };
 
 export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderEditorOptions) {
-  const [state, setState] = useState<AppState | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [state, setState, stateRef] = useStateWithRef<AppState | null>(null);
+  const [selectedId, setSelectedId, selectedIdRef] = useStateWithRef<string | null>(null);
   const [draft, setDraft] = useState<ProviderDraft>({ ...emptyDraft });
   const [models, setModels] = useState<string[]>([]);
   const [modelValue, setModelValue] = useState("");
@@ -34,19 +36,19 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [tokenVisible, setTokenVisible] = useState(false);
-  const [updateConfigFile, setUpdateConfigFile] = useState(true);
+  const [updateConfigFile, setUpdateConfigFile, updateConfigFileRef] = useStateWithRef(true);
   const draftRef = useRef<ProviderDraft>({ ...emptyDraft });
   const cleanDraftRef = useRef<ProviderDraft>({ ...emptyDraft });
   const modelValueRef = useRef("");
   const modelComboboxRef = useRef<HTMLDivElement>(null);
-  const selectedIdRef = useRef(selectedId);
-  const stateRef = useRef(state);
-  const updateConfigFileRef = useRef(updateConfigFile);
   const selectedRef = useRef<ProviderView | null>(null);
-  selectedIdRef.current = selectedId;
-  stateRef.current = state;
-  updateConfigFileRef.current = updateConfigFile;
   const { healthCheckResults, healthCheckProvider } = useProviderHealth({ setMessage });
+
+  const syncTrayMenu = useCallback(() => {
+    void refreshTrayMenu().catch((error) => {
+      console.warn("Failed to refresh tray menu:", errorMessage(error));
+    });
+  }, []);
 
   const refresh = useCallback(async (options?: { preferredId?: string | null }) => {
     let next: AppState;
@@ -108,7 +110,8 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
 
   const isDirty = useMemo(() => {
     const current = comparableDraft(draft);
-    return JSON.stringify(current) !== JSON.stringify(comparableDraft(cleanDraftRef.current));
+    const clean = comparableDraft(cleanDraftRef.current);
+    return current.name !== clean.name || current.baseUrl !== clean.baseUrl || current.model !== clean.model || current.token !== clean.token;
   }, [draft]);
 
   const canSave = isDirty || updateConfigFile;
@@ -198,13 +201,14 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setModelValue("");
       setEditorOpen(false);
       await refresh({ preferredId: result.providerId });
+      syncTrayMenu();
       setMessage(`已复制为 ${result.providerId}。`);
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
       setBusy(false);
     }
-  }, [setMessage, refresh]);
+  }, [setMessage, refresh, syncTrayMenu]);
 
   const importFromCodexToClaude = useCallback(async () => {
     setImportingProviders(true);
@@ -213,6 +217,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     try {
       const result = await importCodexProvidersToClaude();
       await refresh({ preferredId: null });
+      syncTrayMenu();
       setMessage(
         result.importedCount > 0
           ? `已导入 ${result.importedCount} 条 codex 配置到 Claude。`
@@ -224,7 +229,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setImportingProviders(false);
       setBusy(false);
     }
-  }, [setMessage, refresh]);
+  }, [setMessage, refresh, syncTrayMenu]);
 
   const removeProvider = useCallback(async (providerId: string) => {
     setBusy(true);
@@ -239,13 +244,14 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
         setModelValue("");
       }
       await refresh({ preferredId: null });
+      syncTrayMenu();
       setMessage(`已删除 ${providerId}。`);
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
       setBusy(false);
     }
-  }, [setMessage, refresh]);
+  }, [setMessage, refresh, syncTrayMenu]);
 
   const reorderProviders = useCallback(async (providerIds: string[]) => {
     const currentState = stateRef.current;
@@ -274,6 +280,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
 
     try {
       await reorderProvidersCommand(providerIds);
+      syncTrayMenu();
       setMessage("已更新配置顺序。");
     } catch (error) {
       setState(previousState);
@@ -282,7 +289,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     } finally {
       setBusy(false);
     }
-  }, [setMessage, refresh]);
+  }, [setMessage, refresh, syncTrayMenu]);
 
   const setCurrentProvider = useCallback(async (provider: ProviderView) => {
     const model = (provider.model || "").trim();
@@ -316,6 +323,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
             }
           : current
       );
+      syncTrayMenu();
       setMessage(
         shouldUpdateConfig
           ? `已设置 ${provider.name || provider.id} 为当前模型，并更新配置文件。`
@@ -326,7 +334,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     } finally {
       setBusy(false);
     }
-  }, [setMessage]);
+  }, [setMessage, syncTrayMenu]);
 
   const saveCurrentProvider = useCallback(async () => {
     const model = modelValueRef.current.trim();
@@ -359,6 +367,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setEditorOpen(false);
       setModels([]);
       setModelMenuOpen(false);
+      syncTrayMenu();
       setMessage(shouldUpdateConfig && model ? "已保存配置并写入当前模型。" : "已保存配置。");
     } catch (error) {
       const detail = errorMessage(error);
@@ -374,7 +383,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     } finally {
       setBusy(false);
     }
-  }, [setMessage, refresh]);
+  }, [setMessage, refresh, syncTrayMenu]);
 
   const fetchProviderModels = useCallback(async () => {
     const requestDraft = { ...draftRef.current, model: modelValueRef.current.trim() };

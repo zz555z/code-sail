@@ -180,15 +180,7 @@ fn version_command_output(command: &str, args: &[&str]) -> std::io::Result<Outpu
         .join(" ");
     let script = format!(
         r#"
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-
-if [ -f "$HOME/.zprofile" ]; then
-  . "$HOME/.zprofile" >/dev/null 2>&1 || true
-fi
-
-if [ -f "$HOME/.zshrc" ]; then
-  . "$HOME/.zshrc" >/dev/null 2>&1 || true
-fi
+{path_setup}
 
 if ! command -v {command} >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
   . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1 || true
@@ -197,6 +189,7 @@ fi
 
 {command_line}
 "#,
+        path_setup = crate::file_util::MACOS_ZSH_PATH_SETUP,
         command = shell_single_quote(command),
         command_line = command_line
     );

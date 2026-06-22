@@ -70,15 +70,7 @@ fn open_tool_in_terminal(config: &ToolTerminalConfig, args: &[&str]) -> Result<(
         .join(" ");
     let script = format!(
         r#"#!/bin/zsh -l
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-
-if [ -f "$HOME/.zprofile" ]; then
-  . "$HOME/.zprofile" >/dev/null 2>&1 || true
-fi
-
-if [ -f "$HOME/.zshrc" ]; then
-  . "$HOME/.zshrc" >/dev/null 2>&1 || true
-fi
+{path_setup}
 
 {extra_script}{command_line}
 status=$?
@@ -89,6 +81,7 @@ fi
 echo "Press any key to close this window..."
 read -k 1
 "#,
+        path_setup = crate::file_util::MACOS_ZSH_PATH_SETUP,
         extra_script = config.extra_script,
         command_line = command_line,
         command = config.command,
