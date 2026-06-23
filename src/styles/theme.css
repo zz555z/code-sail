@@ -104,3 +104,12 @@
 :root[data-theme="dark"] .auth-segment button.active {
   color: var(--ink);
 }
+
+:root[data-theme="dark"] .confirm-overlay {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme="dark"] .confirm-dialog {
+  background: rgba(22, 22, 22, 0.96);
+  border-color: rgba(80, 80, 80, 0.6);
+}

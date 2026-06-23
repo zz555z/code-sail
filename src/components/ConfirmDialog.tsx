@@ -23,56 +23,64 @@ export function ConfirmDialog({
   onCancel,
   onConfirm
 }: ConfirmDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!open) return;
     const dialog = dialogRef.current;
     if (!dialog) return;
 
-    if (open && !dialog.open) {
-      dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
+    const focusable = dialog.querySelectorAll<HTMLElement>(
+      "button, [href], input, [tabindex]:not([tabindex='-1'])"
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first?.focus();
 
-  const handleClose = (event: React.SyntheticEvent<HTMLDialogElement>) => {
-    // 仅处理点击 backdrop 关闭的情况
-    if (event.target === dialogRef.current) {
-      onCancel();
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+      if (event.key === "Tab" && focusable.length > 0) {
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
     }
-  };
 
-  const handleCancel = (event: React.SyntheticEvent<HTMLDialogElement>) => {
-    event.preventDefault();
-    onCancel();
-  };
+    dialog.addEventListener("keydown", handleKeyDown);
+    return () => dialog.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel, open]);
+
+  if (!open) return null;
 
   return (
-    <dialog
-      className="confirm-dialog"
-      ref={dialogRef}
-      onClose={handleClose}
-      onCancel={handleCancel}
-      aria-labelledby="confirm-dialog-title"
-    >
-      <div className="confirm-dialog-copy">
-        <strong id="confirm-dialog-title">{title}</strong>
-        <span>{description}</span>
-      </div>
-      <div className="confirm-dialog-actions">
-        <button className="soft-button" type="button" onClick={onCancel} disabled={busy}>
-          {cancelLabel}
-        </button>
-        <button
-          className={danger ? "danger-button" : "primary-button"}
-          type="button"
-          onClick={() => void onConfirm()}
-          disabled={busy}
-        >
-          {confirmLabel}
-        </button>
-      </div>
-    </dialog>
+    <div className="confirm-overlay" role="presentation">
+      <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" ref={dialogRef}>
+        <div className="confirm-dialog-copy">
+          <strong id="confirm-dialog-title">{title}</strong>
+          <span>{description}</span>
+        </div>
+        <div className="confirm-dialog-actions">
+          <button className="soft-button" type="button" onClick={onCancel} disabled={busy}>
+            {cancelLabel}
+          </button>
+          <button
+            className={danger ? "danger-button" : "primary-button"}
+            type="button"
+            onClick={() => void onConfirm()}
+            disabled={busy}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
