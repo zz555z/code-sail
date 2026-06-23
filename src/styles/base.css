@@ -243,40 +243,7 @@ input:focus-visible {
 }
 
 .tool-dropdown-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  min-height: 46px;
-  padding: 0 10px;
-  border: 1px solid rgba(166, 213, 194, 0.58);
-  border-radius: 18px;
-  color: var(--leaf);
-  background: var(--mint);
-  font-size: 14px;
-  font-weight: 720;
-  white-space: nowrap;
-  cursor: pointer;
-  overflow: hidden;
-  transition:
-    border-color 220ms var(--ease-ui),
-    background 220ms var(--ease-ui),
-    box-shadow 240ms var(--ease-ui),
-    color 180ms ease,
-    transform 240ms var(--ease-snap);
-}
-
-.tool-dropdown-trigger:hover:not(:disabled) {
-  border-color: rgba(145, 191, 173, 0.74);
-  background: #f4fbf8;
-  box-shadow: 0 12px 24px rgba(103, 137, 125, 0.12);
-  transform: translate3d(0, -1px, 0);
-}
-
-.tool-dropdown-trigger.open {
-  border-color: rgba(145, 191, 173, 0.74);
-  background: #f4fbf8;
-  box-shadow: 0 12px 24px rgba(103, 137, 125, 0.12);
+  position: relative;
 }
 
 .tool-dropdown-menu {
@@ -317,10 +284,8 @@ input:focus-visible {
 .tool-brand-icon {
   display: block;
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  overflow: hidden;
-  border-radius: 7px;
+  width: 17px;
+  height: 17px;
 }
 
 .tool-dropdown-item:hover {

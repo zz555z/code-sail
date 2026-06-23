@@ -4,11 +4,15 @@ import {
   Clock3,
   Download,
   LayoutDashboard,
+  Monitor,
+  Moon,
   RefreshCw,
+  Sun,
   Terminal
 } from "lucide-react";
 import { NotificationToast } from "../components/NotificationToast";
 import { useActiveToolContext } from "../contexts/ActiveToolContext";
+import { useThemeDropdown } from "../hooks/useThemeDropdown";
 import { useAppServicesContext } from "../contexts/AppServicesContext";
 import { useHistoryContext } from "../contexts/HistoryContext";
 import { useMessage } from "../contexts/MessageContext";
@@ -60,12 +64,24 @@ const fallbackToolStatuses: ToolStatus[] = [
   }
 ];
 
-type OverviewPageProps = {
-  themePreference: ThemePreference;
-  onCycleTheme: () => void;
+type ThemeOption = {
+  value: ThemePreference;
+  label: string;
+  icon: typeof Sun;
 };
 
-export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProps) {
+const themeOptions: ThemeOption[] = [
+  { value: "system", label: "跟随系统", icon: Monitor },
+  { value: "light", label: "浅色", icon: Sun },
+  { value: "dark", label: "深色", icon: Moon }
+];
+
+type OverviewPageProps = {
+  themePreference: ThemePreference;
+  onSetTheme: (pref: ThemePreference) => void;
+};
+
+export function OverviewPage({ themePreference, onSetTheme }: OverviewPageProps) {
   const { message, messageClassName, dismissMessage } = useMessage();
   const { activeTool } = useActiveToolContext();
   const { state, activeProvider, busy, refresh } = useProviderEditorContext();
@@ -97,6 +113,10 @@ export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProp
   const latestVersionLabel = appUpdate?.latestVersion ? `v${appUpdate.latestVersion}` : null;
   const activeToolName = activeTool === "claude" ? "Claude" : "Codex";
 
+  const { open: themeDropdownOpen, ref: themeDropdownRef, toggle: toggleThemeDropdown, close: closeThemeDropdown } = useThemeDropdown();
+  const currentTheme = themeOptions.find((t) => t.value === themePreference) ?? themeOptions[0];
+  const CurrentThemeIcon = currentTheme.icon;
+
   return (
     <section className="overview-board">
       <header className="board-head">
@@ -109,16 +129,46 @@ export function OverviewPage({ themePreference, onCycleTheme }: OverviewPageProp
         </div>
 
         <div className="board-actions">
-          <button
-            className="soft-button toolbar-icon-button"
-            type="button"
-            data-tooltip="切换主题"
-            data-tooltip-placement="left"
-            aria-label={`切换主题，当前为${themeLabel(themePreference)}`}
-            onClick={onCycleTheme}
-          >
-            {themeIcon(themePreference)}
-          </button>
+          <div className="theme-dropdown" ref={themeDropdownRef}>
+            <button
+              className={`soft-button toolbar-icon-button ${themeDropdownOpen ? "open" : ""}`}
+              type="button"
+              data-tooltip="切换主题"
+              data-tooltip-placement="left"
+              aria-label={`切换主题，当前为${themeLabel(themePreference)}`}
+              aria-haspopup="listbox"
+              aria-expanded={themeDropdownOpen}
+              onClick={toggleThemeDropdown}
+            >
+              <CurrentThemeIcon size={17} />
+            </button>
+            {themeDropdownOpen ? (
+              <div className="theme-dropdown-menu" role="listbox" aria-label="主题选择">
+                {themeOptions.map((option) => {
+                  const OptionIcon = option.icon;
+                  const isActive = option.value === themePreference;
+                  return (
+                    <button
+                      key={option.value}
+                      className={`theme-dropdown-item ${isActive ? "active" : ""}`}
+                      type="button"
+                      role="option"
+                      aria-selected={isActive}
+                      aria-label={option.label}
+                      data-tooltip={option.label}
+                      data-tooltip-placement="left"
+                      onClick={() => {
+                        onSetTheme(option.value);
+                        closeThemeDropdown();
+                      }}
+                    >
+                      <OptionIcon size={16} />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
           <button
             className="soft-button toolbar-icon-button"
             type="button"

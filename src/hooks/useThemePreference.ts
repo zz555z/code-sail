@@ -25,6 +25,7 @@ export function useThemePreference() {
 
   return {
     themePreference,
+    setThemePreference,
     cycleTheme: useCallback(() => setThemePreference((current) => nextThemePreference(current)), [])
   };
 }

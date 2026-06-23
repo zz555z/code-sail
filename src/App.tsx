@@ -38,7 +38,7 @@ export function App() {
   const [initialLoading, setInitialLoading] = useState(true);
   const appVersion = packageJson.version;
   const { message, setMessage, setPaused: setMessagePaused, dismissMessage, messageClassName } = useTransientMessage();
-  const { themePreference, cycleTheme } = useThemePreference();
+  const { themePreference, setThemePreference, cycleTheme } = useThemePreference();
   const { activeTool, switching: toolSwitching, loadActiveTool, switchTool } = useActiveTool();
   const providerEditor = useProviderEditor({ setMessage, setMessagePaused });
   const {
@@ -207,7 +207,7 @@ export function App() {
                         {activePage === "overview" ? (
                           <div className="page-transition" key="overview">
                             <ErrorBoundary>
-                              <OverviewPage themePreference={themePreference} onCycleTheme={cycleTheme} />
+                              <OverviewPage themePreference={themePreference} onSetTheme={setThemePreference} />
                             </ErrorBoundary>
                           </div>
                         ) : null}

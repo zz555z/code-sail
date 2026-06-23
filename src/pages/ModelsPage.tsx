@@ -3,16 +3,17 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
-  FileCog,
+  FileCheck,
+  FileX,
   Plus,
   Power,
   RefreshCw,
   Save,
-  SlidersHorizontal,
   Settings2,
   Trash2,
   X
 } from "lucide-react";
+import { AdvancedSettings } from "../components/AdvancedSettings";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ModelCombobox } from "../components/ModelCombobox";
 import { NotificationToast } from "../components/NotificationToast";
@@ -57,7 +58,7 @@ function CodexLogoIcon({ title, ...props }: ToolIconProps) {
 
 function ClaudeLogoIcon({ title, ...props }: ToolIconProps) {
   return (
-    <svg viewBox="0 0 32 32" role={title ? "img" : "presentation"} aria-hidden={title ? undefined : true} {...props}>
+    <svg viewBox="0 0 33 33" role={title ? "img" : "presentation"} aria-hidden={title ? undefined : true} {...props}>
       {title ? <title>{title}</title> : null}
       <rect width="32" height="32" rx="8" fill="#d97735" />
       <path
@@ -70,22 +71,9 @@ function ClaudeLogoIcon({ title, ...props }: ToolIconProps) {
 }
 
 const toolOptions: Array<{ value: ToolType; label: string; icon: (props: ToolIconProps) => JSX.Element }> = [
-  { value: "codex", label: "codex", icon: CodexLogoIcon },
-  { value: "claude", label: "Claude Code", icon: ClaudeLogoIcon }
+  { value: "codex", label: "Codex CLI", icon: CodexLogoIcon },
+  { value: "claude", label: "Claude Code CLI", icon: ClaudeLogoIcon }
 ];
-
-const DEFAULT_WIRE_API = "responses";
-
-function quotedConfigValue(value: string) {
-  return JSON.stringify(value);
-}
-
-function providerTableKey(providerId: string) {
-  if (/^[A-Za-z0-9_-]+$/.test(providerId)) {
-    return providerId;
-  }
-  return quotedConfigValue(providerId);
-}
 
 export function ModelsPage() {
   const { message, messageClassName, dismissMessage } = useMessage();
@@ -94,7 +82,6 @@ export function ModelsPage() {
   const [showImportPrompt, setShowImportPrompt] = useState(false);
   const [dismissedImportPrompt, setDismissedImportPrompt] = useState(false);
   const [providerPendingDelete, setProviderPendingDelete] = useState<ProviderView | null>(null);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const {
     state,
@@ -221,79 +208,6 @@ export function ModelsPage() {
     firstInput?.focus();
   }, [editorOpen]);
 
-  useEffect(() => {
-    setAdvancedOpen(false);
-  }, [editorOpen, selectedId]);
-
-  const previewProviderId = draft.originalId || "<auto>";
-  const previewName = draft.name.trim() || previewProviderId;
-  const previewBaseUrl = draft.baseUrl.trim() || "https://example.com/v1";
-  const previewModel = modelValue.trim() || draft.model.trim() || "<model>";
-  const previewHaikuModel = claudeHaikuModel.trim() || previewModel;
-  const previewOpusModel = claudeOpusModel.trim() || previewModel;
-  const previewSonnetModel = claudeSonnetModel.trim() || previewModel;
-  const previewToken = draft.token.trim();
-  const previewToolType = draft.toolType;
-  const previewWireApi = draft.wireApi.trim() || DEFAULT_WIRE_API;
-  const previewRequiresOpenaiAuth = draft.requiresOpenaiAuth;
-
-  const configPreview = useMemo(() => {
-    const providerId = previewProviderId;
-
-    if (previewToolType === "claude") {
-      const tokenEnvKey = previewRequiresOpenaiAuth ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN";
-      return JSON.stringify(
-        {
-          env: {
-            [tokenEnvKey]: previewToken ? "<saved token>" : "<token>",
-            ANTHROPIC_BASE_URL: previewBaseUrl,
-            ANTHROPIC_DEFAULT_HAIKU_MODEL: previewHaikuModel,
-            ANTHROPIC_DEFAULT_OPUS_MODEL: previewOpusModel,
-            ANTHROPIC_DEFAULT_SONNET_MODEL: previewSonnetModel
-          }
-        },
-        null,
-        2
-      );
-    }
-
-    const lines = updateConfigFile
-      ? [
-          `model_provider = ${quotedConfigValue(providerId)}`,
-          `model = ${quotedConfigValue(previewModel)}`,
-          "",
-          `[model_providers.${providerTableKey(providerId)}]`,
-          `name = ${quotedConfigValue(previewName)}`,
-          `wire_api = ${quotedConfigValue(previewWireApi)}`,
-          `requires_openai_auth = ${previewRequiresOpenaiAuth ? "true" : "false"}`,
-          `base_url = ${quotedConfigValue(previewBaseUrl)}`
-        ]
-      : [
-          "# 当前关闭了“更新配置文件”，保存时只会更新 CodeSail 本地数据。",
-          "",
-          `[model_providers.${providerTableKey(providerId)}]`,
-          `name = ${quotedConfigValue(previewName)}`,
-          `wire_api = ${quotedConfigValue(previewWireApi)}`,
-          `requires_openai_auth = ${previewRequiresOpenaiAuth ? "true" : "false"}`,
-          `base_url = ${quotedConfigValue(previewBaseUrl)}`
-        ];
-
-    return lines.join("\n");
-  }, [
-    previewBaseUrl,
-    previewModel,
-    previewHaikuModel,
-    previewOpusModel,
-    previewSonnetModel,
-    previewName,
-    previewProviderId,
-    previewRequiresOpenaiAuth,
-    previewToken,
-    previewToolType,
-    previewWireApi,
-    updateConfigFile
-  ]);
-
   const { draggingProviderId, dragOverTarget, handleProviderPointerDown } = useProviderReorder({
     providers,
     busy,
@@ -373,11 +287,11 @@ export function ModelsPage() {
                 }}
               >
                 <button
-                  className={`tool-dropdown-trigger ${toolDropdownOpen ? "open" : ""}`}
+                  className={`soft-button toolbar-icon-button tool-trigger-${activeTool} ${toolDropdownOpen ? "open" : ""}`}
                   type="button"
-                  data-tooltip={currentTool.label}
+                  data-tooltip="工具切换"
                   data-tooltip-placement="left"
-                  aria-label={currentTool.label}
+                  aria-label="工具切换"
                   aria-haspopup="listbox"
                   aria-expanded={toolDropdownOpen}
                   onClick={() => setToolDropdownOpen((open) => !open)}
@@ -415,23 +329,17 @@ export function ModelsPage() {
                 ) : null}
               </div>
 
-              <label
-                className={`config-sync-option icon-sync-option ${updateConfigFile ? "enabled" : ""}`}
+              <button
+                className={`toolbar-icon-button ${updateConfigFile ? "soft-button config-sync-on" : "soft-button config-sync-off"}`}
+                type="button"
                 data-tooltip={updateConfigFile ? "更新配置文件：开" : "更新配置文件：关"}
                 data-tooltip-placement="left"
+                aria-label={updateConfigFile ? "更新配置文件：开" : "更新配置文件：关"}
+                aria-pressed={updateConfigFile}
+                onClick={() => setUpdateConfigFile(!updateConfigFile)}
               >
-                <FileCog size={17} aria-hidden="true" />
-                <input
-                  aria-label="更新配置文件"
-                  checked={updateConfigFile}
-                  role="switch"
-                  type="checkbox"
-                  onChange={(event) => setUpdateConfigFile(event.target.checked)}
-                />
-                <span className="config-sync-switch" aria-hidden="true">
-                  <span />
-                </span>
-              </label>
+                {updateConfigFile ? <FileCheck size={17} aria-hidden="true" /> : <FileX size={17} aria-hidden="true" />}
+              </button>
 
               {activeTool === "codex" ? (
                 <button
@@ -647,83 +555,15 @@ export function ModelsPage() {
                 </div>
               )}
 
-              <div className="advanced-settings wide">
-                <button
-                  className={`advanced-toggle ${advancedOpen ? "open" : ""}`}
-                  type="button"
-                  aria-expanded={advancedOpen}
-                  onClick={() => setAdvancedOpen((open) => !open)}
-                >
-                  <SlidersHorizontal size={17} />
-                  <span>高级设置</span>
-                  <ChevronDown size={17} />
-                </button>
-
-                {advancedOpen ? (
-                  <div className="advanced-panel">
-                    {draft.toolType === "codex" ? (
-                      <div className="advanced-grid">
-                        <div className="field-group">
-                          <span>认证方式</span>
-                          <div
-                            className={`auth-segment ${draft.requiresOpenaiAuth ? "auth-openai" : "auth-token"}`}
-                            role="group"
-                            aria-label="认证方式"
-                          >
-                            <button
-                              className={!draft.requiresOpenaiAuth ? "active" : ""}
-                              type="button"
-                              onClick={() => updateDraft({ requiresOpenaiAuth: false })}
-                            >
-                              Token
-                            </button>
-                            <button
-                              className={draft.requiresOpenaiAuth ? "active" : ""}
-                              type="button"
-                              onClick={() => updateDraft({ requiresOpenaiAuth: true })}
-                            >
-                              OpenAI 登录
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {draft.toolType === "claude" ? (
-                      <div className="advanced-grid">
-                        <div className="field-group">
-                          <span>认证方式</span>
-                          <div
-                            className={`auth-segment ${draft.requiresOpenaiAuth ? "auth-openai" : "auth-token"}`}
-                            role="group"
-                            aria-label="认证方式"
-                          >
-                            <button
-                              className={!draft.requiresOpenaiAuth ? "active" : ""}
-                              type="button"
-                              onClick={() => updateDraft({ requiresOpenaiAuth: false })}
-                            >
-                              Bearer Token
-                            </button>
-                            <button
-                              className={draft.requiresOpenaiAuth ? "active" : ""}
-                              type="button"
-                              onClick={() => updateDraft({ requiresOpenaiAuth: true })}
-                            >
-                              API Key
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="config-preview">
-                      <span>配置预览</span>
-                      <pre>{configPreview}</pre>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              <AdvancedSettings
+                draft={draft}
+                modelValue={modelValue}
+                claudeHaikuModel={claudeHaikuModel}
+                claudeOpusModel={claudeOpusModel}
+                claudeSonnetModel={claudeSonnetModel}
+                updateConfigFile={updateConfigFile}
+                onUpdateDraft={updateDraft}
+              />
             </div>
           </div>
 

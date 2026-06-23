@@ -424,7 +424,7 @@ dependencies = [
 
 [[package]]
 name = "codesail"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "aes",
  "anyhow",
