@@ -5,8 +5,13 @@ export const emptyDraft: ProviderDraft = {
   name: "",
   baseUrl: "",
   model: "",
+  wireApi: "responses",
+  requiresOpenaiAuth: false,
   token: "",
-  toolType: "codex"
+  toolType: "codex",
+  claudeHaikuModel: "",
+  claudeOpusModel: "",
+  claudeSonnetModel: ""
 };
 
 export function draftFromProvider(provider: ProviderView | ProviderDetail | null): ProviderDraft {
@@ -16,8 +21,13 @@ export function draftFromProvider(provider: ProviderView | ProviderDetail | null
     name: provider.name || provider.id,
     baseUrl: provider.baseUrl || "",
     model: provider.model || "",
+    wireApi: provider.wireApi || "responses",
+    requiresOpenaiAuth: provider.requiresOpenaiAuth ?? false,
     token: "token" in provider ? provider.token || "" : "",
-    toolType: provider.toolType
+    toolType: provider.toolType,
+    claudeHaikuModel: provider.claudeHaikuModel || "",
+    claudeOpusModel: provider.claudeOpusModel || "",
+    claudeSonnetModel: provider.claudeSonnetModel || ""
   };
 }
 
@@ -26,6 +36,11 @@ export function comparableDraft(draft: ProviderDraft) {
     name: draft.name.trim(),
     baseUrl: draft.baseUrl.trim(),
     model: draft.model.trim(),
-    token: draft.token.trim()
+    wireApi: draft.wireApi.trim(),
+    requiresOpenaiAuth: draft.requiresOpenaiAuth,
+    token: draft.token.trim(),
+    claudeHaikuModel: draft.claudeHaikuModel.trim(),
+    claudeOpusModel: draft.claudeOpusModel.trim(),
+    claudeSonnetModel: draft.claudeSonnetModel.trim()
   };
 }

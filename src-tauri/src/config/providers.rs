@@ -21,9 +21,14 @@ pub struct ProviderInput {
     pub name: String,
     pub base_url: String,
     pub model: String,
+    pub wire_api: Option<String>,
+    pub requires_openai_auth: Option<bool>,
     pub token: Option<String>,
     pub update_config: bool,
     pub tool_type: Option<String>,
+    pub claude_haiku_model: Option<String>,
+    pub claude_opus_model: Option<String>,
+    pub claude_sonnet_model: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,9 +45,14 @@ pub struct ProviderDetail {
     pub base_url: String,
     pub model: Option<String>,
     pub models: Vec<String>,
+    pub wire_api: String,
+    pub requires_openai_auth: bool,
     pub token: Option<String>,
     pub token_present: bool,
     pub tool_type: ToolType,
+    pub claude_haiku_model: Option<String>,
+    pub claude_opus_model: Option<String>,
+    pub claude_sonnet_model: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -141,6 +151,23 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     } else {
         next_provider_id(&conn, name, base_url, None)?
     };
+    let existing_provider = if updates_existing_provider {
+        get_provider(&conn, &config_path, original_id)?
+    } else {
+        None
+    };
+    let wire_api = input
+        .wire_api
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| existing_provider.as_ref().map(|provider| provider.wire_api.clone()))
+        .unwrap_or_else(|| "responses".to_string());
+    let requires_openai_auth = input
+        .requires_openai_auth
+        .or_else(|| existing_provider.as_ref().map(|provider| provider.requires_open_ai_auth))
+        .unwrap_or(false);
     let explicit_token = input
         .token
         .as_deref()
@@ -169,6 +196,9 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     } else {
         next_provider_position(&conn, tool_type)?
     };
+    let claude_haiku = input.claude_haiku_model.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let claude_opus = input.claude_opus_model.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let claude_sonnet = input.claude_sonnet_model.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
     with_transaction(&conn, |conn| {
         if !original_id.is_empty() && original_id != provider_id {
@@ -180,22 +210,35 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
 
         conn.execute(
             r#"
-            INSERT INTO providers (id, name, base_url, model, token, tool_type, position)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            INSERT INTO providers (
+                id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type, position,
+                claude_haiku_model, claude_opus_model, claude_sonnet_model
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 base_url = excluded.base_url,
                 model = excluded.model,
-                token = excluded.token
+                wire_api = excluded.wire_api,
+                requires_openai_auth = excluded.requires_openai_auth,
+                token = excluded.token,
+                claude_haiku_model = excluded.claude_haiku_model,
+                claude_opus_model = excluded.claude_opus_model,
+                claude_sonnet_model = excluded.claude_sonnet_model
             "#,
             &[
                 SqlValue::Text(&provider_id),
                 SqlValue::Text(provider_name),
                 SqlValue::Text(&normalized_base_url),
                 SqlValue::OptionalText(optional_non_empty(model)),
+                SqlValue::Text(&wire_api),
+                SqlValue::I64(bool_to_i64(requires_openai_auth)),
                 SqlValue::OptionalText(stored_token.as_deref()),
                 SqlValue::Text(tool_type_str),
                 SqlValue::I64(position),
+                SqlValue::OptionalText(claude_haiku),
+                SqlValue::OptionalText(claude_opus),
+                SqlValue::OptionalText(claude_sonnet),
             ],
         )?;
         if input.update_config {
@@ -237,9 +280,14 @@ fn get_provider_detail_inner(provider_id: &str) -> Result<ProviderDetail> {
         base_url: provider.base_url,
         model: provider.model,
         models,
+        wire_api: provider.wire_api,
+        requires_openai_auth: provider.requires_open_ai_auth,
         token: provider.token,
         token_present,
         tool_type: provider.tool_type,
+        claude_haiku_model: provider.claude_haiku_model,
+        claude_opus_model: provider.claude_opus_model,
+        claude_sonnet_model: provider.claude_sonnet_model,
     })
 }
 
@@ -309,8 +357,9 @@ fn copy_provider_inner(provider_id: &str) -> Result<CopyProviderResponse> {
 
         conn.execute(
             r#"
-            INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type, position)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type, position,
+                                   claude_haiku_model, claude_opus_model, claude_sonnet_model)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
             "#,
             &[
                 SqlValue::Text(&copy_id),
@@ -322,6 +371,9 @@ fn copy_provider_inner(provider_id: &str) -> Result<CopyProviderResponse> {
                 SqlValue::OptionalText(copied_token.as_deref()),
                 SqlValue::Text(tool_type_str),
                 SqlValue::I64(position),
+                SqlValue::OptionalText(source.claude_haiku_model.as_deref()),
+                SqlValue::OptionalText(source.claude_opus_model.as_deref()),
+                SqlValue::OptionalText(source.claude_sonnet_model.as_deref()),
             ],
         )?;
         copy_provider_models(conn, source_id, &copy_id)?;
@@ -357,8 +409,9 @@ fn import_codex_providers_to_claude_inner() -> Result<ImportProvidersResponse> {
 
             conn.execute(
                 r#"
-                INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type, position)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                INSERT INTO providers (id, name, base_url, model, wire_api, requires_openai_auth, token, tool_type, position,
+                                       claude_haiku_model, claude_opus_model, claude_sonnet_model)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                 "#,
                 &[
                     SqlValue::Text(&target_id),
@@ -370,6 +423,9 @@ fn import_codex_providers_to_claude_inner() -> Result<ImportProvidersResponse> {
                     SqlValue::OptionalText(copied_token.as_deref()),
                     SqlValue::Text(ToolType::Claude.as_str()),
                     SqlValue::I64(next_position),
+                    SqlValue::OptionalText(source.claude_haiku_model.as_deref()),
+                    SqlValue::OptionalText(source.claude_opus_model.as_deref()),
+                    SqlValue::OptionalText(source.claude_sonnet_model.as_deref()),
                 ],
             )?;
             next_position += 1;

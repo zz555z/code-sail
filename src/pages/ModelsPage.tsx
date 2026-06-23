@@ -8,11 +8,13 @@ import {
   Power,
   RefreshCw,
   Save,
+  SlidersHorizontal,
   Settings2,
   Trash2,
   X
 } from "lucide-react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ModelCombobox } from "../components/ModelCombobox";
 import { NotificationToast } from "../components/NotificationToast";
 import { ProviderRow } from "../components/ProviderRow";
 import { useActiveToolContext } from "../contexts/ActiveToolContext";
@@ -72,6 +74,19 @@ const toolOptions: Array<{ value: ToolType; label: string; icon: (props: ToolIco
   { value: "claude", label: "Claude Code", icon: ClaudeLogoIcon }
 ];
 
+const DEFAULT_WIRE_API = "responses";
+
+function quotedConfigValue(value: string) {
+  return JSON.stringify(value);
+}
+
+function providerTableKey(providerId: string) {
+  if (/^[A-Za-z0-9_-]+$/.test(providerId)) {
+    return providerId;
+  }
+  return quotedConfigValue(providerId);
+}
+
 export function ModelsPage() {
   const { message, messageClassName, dismissMessage } = useMessage();
   const { activeTool, switching: toolSwitching, switchTool } = useActiveToolContext();
@@ -79,6 +94,7 @@ export function ModelsPage() {
   const [showImportPrompt, setShowImportPrompt] = useState(false);
   const [dismissedImportPrompt, setDismissedImportPrompt] = useState(false);
   const [providerPendingDelete, setProviderPendingDelete] = useState<ProviderView | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const {
     state,
@@ -87,6 +103,9 @@ export function ModelsPage() {
     draft,
     models,
     modelValue,
+    claudeHaikuModel,
+    claudeOpusModel,
+    claudeSonnetModel,
     providerCount,
     editorOpen,
     busy,
@@ -94,13 +113,19 @@ export function ModelsPage() {
     restarting,
     loadingModels,
     modelMenuOpen,
+    modelMenuTarget,
     tokenVisible,
     updateConfigFile,
     canSave,
     modelComboboxRef,
     setUpdateConfigFile,
     setModelMenuOpen,
+    setModelMenuTarget,
     setModelValue,
+    setClaudeHaikuModel,
+    setClaudeOpusModel,
+    setClaudeSonnetModel,
+    openModelMenu,
     toggleTokenVisible,
     refresh,
     restartCodex,
@@ -195,6 +220,80 @@ export function ModelsPage() {
     const firstInput = document.querySelector<HTMLInputElement>(".config-editor .field-grid input");
     firstInput?.focus();
   }, [editorOpen]);
+
+  useEffect(() => {
+    setAdvancedOpen(false);
+  }, [editorOpen, selectedId]);
+
+  const previewProviderId = draft.originalId || "<auto>";
+  const previewName = draft.name.trim() || previewProviderId;
+  const previewBaseUrl = draft.baseUrl.trim() || "https://example.com/v1";
+  const previewModel = modelValue.trim() || draft.model.trim() || "<model>";
+  const previewHaikuModel = claudeHaikuModel.trim() || previewModel;
+  const previewOpusModel = claudeOpusModel.trim() || previewModel;
+  const previewSonnetModel = claudeSonnetModel.trim() || previewModel;
+  const previewToken = draft.token.trim();
+  const previewToolType = draft.toolType;
+  const previewWireApi = draft.wireApi.trim() || DEFAULT_WIRE_API;
+  const previewRequiresOpenaiAuth = draft.requiresOpenaiAuth;
+
+  const configPreview = useMemo(() => {
+    const providerId = previewProviderId;
+
+    if (previewToolType === "claude") {
+      const tokenEnvKey = previewRequiresOpenaiAuth ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN";
+      return JSON.stringify(
+        {
+          env: {
+            [tokenEnvKey]: previewToken ? "<saved token>" : "<token>",
+            ANTHROPIC_BASE_URL: previewBaseUrl,
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: previewHaikuModel,
+            ANTHROPIC_DEFAULT_OPUS_MODEL: previewOpusModel,
+            ANTHROPIC_DEFAULT_SONNET_MODEL: previewSonnetModel
+          }
+        },
+        null,
+        2
+      );
+    }
+
+    const lines = updateConfigFile
+      ? [
+          `model_provider = ${quotedConfigValue(providerId)}`,
+          `model = ${quotedConfigValue(previewModel)}`,
+          "",
+          `[model_providers.${providerTableKey(providerId)}]`,
+          `name = ${quotedConfigValue(previewName)}`,
+          `wire_api = ${quotedConfigValue(previewWireApi)}`,
+          `requires_openai_auth = ${previewRequiresOpenaiAuth ? "true" : "false"}`,
+          `base_url = ${quotedConfigValue(previewBaseUrl)}`
+        ]
+      : [
+          "# 当前关闭了“更新配置文件”，保存时只会更新 CodeSail 本地数据。",
+          "",
+          `[model_providers.${providerTableKey(providerId)}]`,
+          `name = ${quotedConfigValue(previewName)}`,
+          `wire_api = ${quotedConfigValue(previewWireApi)}`,
+          `requires_openai_auth = ${previewRequiresOpenaiAuth ? "true" : "false"}`,
+          `base_url = ${quotedConfigValue(previewBaseUrl)}`
+        ];
+
+    return lines.join("\n");
+  }, [
+    previewBaseUrl,
+    previewModel,
+    previewHaikuModel,
+    previewOpusModel,
+    previewSonnetModel,
+    previewName,
+    previewProviderId,
+    previewRequiresOpenaiAuth,
+    previewToken,
+    previewToolType,
+    previewWireApi,
+    updateConfigFile
+  ]);
+
   const { draggingProviderId, dragOverTarget, handleProviderPointerDown } = useProviderReorder({
     providers,
     busy,
@@ -456,7 +555,7 @@ export function ModelsPage() {
                 <input
                   value={draft.baseUrl}
                   onChange={(event) => updateDraft({ baseUrl: event.target.value })}
-                  placeholder="https://example.com/v1"
+                  placeholder="请求模型的地址，根据第三方模型请求地址填写"
                 />
               </label>
               <label className="wide">
@@ -466,7 +565,7 @@ export function ModelsPage() {
                     value={draft.token}
                     type={tokenVisible ? "text" : "password"}
                     onChange={(event) => updateDraft({ token: event.target.value })}
-                    placeholder="sk-..."
+                    placeholder="sk-...密钥"
                   />
                   <button
                     className="secret-toggle"
@@ -480,78 +579,61 @@ export function ModelsPage() {
                   </button>
                 </div>
               </label>
-              <div className="field-group wide">
-                <span>Model</span>
-                <div className="model-field-stack">
-                  <div className="model-combobox">
-                    <div
-                      className="model-input-wrap"
-                      ref={modelComboboxRef}
-                      onBlur={(event) => {
-                        if (!event.currentTarget.contains(event.relatedTarget)) {
-                          setModelMenuOpen(false);
-                        }
-                      }}
+              {draft.toolType === "claude" ? (
+                <div className="field-group wide">
+                  <div className="claude-model-header">
+                    <span>Model</span>
+                    <button
+                      className="fetch-button"
+                      type="button"
+                      onClick={() => void fetchProviderModels()}
+                      disabled={loadingModels || busy}
                     >
-                      <input
-                        value={modelValue}
-                        role="combobox"
-                        aria-expanded={modelMenuOpen}
-                        aria-controls="model-options"
-                        aria-autocomplete="list"
-                        onFocus={() => setModelMenuOpen(models.length > 0)}
-                        onClick={() => setModelMenuOpen(models.length > 0)}
-                        onChange={(event) => {
-                          const nextModel = event.target.value;
-                          setModelValue(nextModel);
-                          updateDraft({ model: nextModel });
-                          setModelMenuOpen(models.length > 0);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") {
-                            setModelMenuOpen(false);
-                          }
-                        }}
-                        placeholder="选择模型或手动填写"
-                      />
-                      <button
-                        className={`model-menu-toggle ${modelMenuOpen ? "open" : ""}`}
-                        type="button"
-                        data-tooltip="展开模型列表"
-                        data-tooltip-placement="left"
-                        aria-label="展开模型列表"
-                        disabled={!models.length}
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => setModelMenuOpen((open) => (models.length ? !open : false))}
-                      >
-                        <ChevronDown size={17} />
-                      </button>
-                      {modelMenuOpen && models.length ? (
-                        <div className="model-menu" id="model-options" role="listbox" aria-label="模型列表">
-                          {models.map((model) => (
-                            <button
-                              key={model}
-                              className={`model-option ${model === modelValue ? "selected" : ""}`}
-                              type="button"
-                              role="option"
-                              aria-selected={model === modelValue}
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                selectModel(model);
-                              }}
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                selectModel(model);
-                              }}
-                            >
-                              {model}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
+                      <RefreshCw size={15} />
+                      {loadingModels ? "获取中" : "获取模型"}
+                    </button>
+                  </div>
+                  <div className="claude-models-grid">
+                    {([
+                      { key: "haiku" as const, label: "Haiku", value: claudeHaikuModel, set: setClaudeHaikuModel },
+                      { key: "opus" as const, label: "Opus", value: claudeOpusModel, set: setClaudeOpusModel },
+                      { key: "sonnet" as const, label: "Sonnet", value: claudeSonnetModel, set: setClaudeSonnetModel }
+                    ]).map(({ key, label, value, set }) => (
+                      <div key={key} className="claude-model-field">
+                        <span className="claude-model-label">{label}</span>
+                        <ModelCombobox
+                          value={value}
+                          models={models}
+                          menuOpen={modelMenuOpen && modelMenuTarget === key}
+                          menuId={`model-options-${key}`}
+                          ariaLabel={`${label} 模型列表`}
+                          onChange={set}
+                          onSelect={(model) => selectModel(model, key)}
+                          onMenuToggle={(open) => {
+                            setModelMenuOpen(open);
+                            if (open) setModelMenuTarget(key);
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="field-group wide">
+                  <span>Model</span>
+                  <div className="model-field-stack">
+                    <ModelCombobox
+                      value={modelValue}
+                      models={models}
+                      menuOpen={modelMenuOpen}
+                      containerRef={modelComboboxRef}
+                      onChange={(nextModel) => {
+                        setModelValue(nextModel);
+                        updateDraft({ model: nextModel });
+                      }}
+                      onSelect={selectModel}
+                      onMenuToggle={setModelMenuOpen}
+                    />
                     <button
                       className="fetch-button"
                       type="button"
@@ -563,6 +645,84 @@ export function ModelsPage() {
                     </button>
                   </div>
                 </div>
+              )}
+
+              <div className="advanced-settings wide">
+                <button
+                  className={`advanced-toggle ${advancedOpen ? "open" : ""}`}
+                  type="button"
+                  aria-expanded={advancedOpen}
+                  onClick={() => setAdvancedOpen((open) => !open)}
+                >
+                  <SlidersHorizontal size={17} />
+                  <span>高级设置</span>
+                  <ChevronDown size={17} />
+                </button>
+
+                {advancedOpen ? (
+                  <div className="advanced-panel">
+                    {draft.toolType === "codex" ? (
+                      <div className="advanced-grid">
+                        <div className="field-group">
+                          <span>认证方式</span>
+                          <div
+                            className={`auth-segment ${draft.requiresOpenaiAuth ? "auth-openai" : "auth-token"}`}
+                            role="group"
+                            aria-label="认证方式"
+                          >
+                            <button
+                              className={!draft.requiresOpenaiAuth ? "active" : ""}
+                              type="button"
+                              onClick={() => updateDraft({ requiresOpenaiAuth: false })}
+                            >
+                              Token
+                            </button>
+                            <button
+                              className={draft.requiresOpenaiAuth ? "active" : ""}
+                              type="button"
+                              onClick={() => updateDraft({ requiresOpenaiAuth: true })}
+                            >
+                              OpenAI 登录
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {draft.toolType === "claude" ? (
+                      <div className="advanced-grid">
+                        <div className="field-group">
+                          <span>认证方式</span>
+                          <div
+                            className={`auth-segment ${draft.requiresOpenaiAuth ? "auth-openai" : "auth-token"}`}
+                            role="group"
+                            aria-label="认证方式"
+                          >
+                            <button
+                              className={!draft.requiresOpenaiAuth ? "active" : ""}
+                              type="button"
+                              onClick={() => updateDraft({ requiresOpenaiAuth: false })}
+                            >
+                              Bearer Token
+                            </button>
+                            <button
+                              className={draft.requiresOpenaiAuth ? "active" : ""}
+                              type="button"
+                              onClick={() => updateDraft({ requiresOpenaiAuth: true })}
+                            >
+                              API Key
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="config-preview">
+                      <span>配置预览</span>
+                      <pre>{configPreview}</pre>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

@@ -15,8 +15,11 @@ import {
 import { comparableDraft, draftFromProvider, emptyDraft } from "../lib/providerDraft";
 import type { AppState, ProviderDraft, ProviderView } from "../lib/types";
 import { errorMessage } from "../lib/utils";
+import { useModelSelection, type ModelTarget } from "./useModelSelection";
 import { useProviderHealth } from "./useProviderHealth";
 import { useStateWithRef } from "./useStateWithRef";
+
+export type { ModelTarget };
 
 type UseProviderEditorOptions = {
   setMessage: (message: string) => void;
@@ -28,21 +31,41 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   const [selectedId, setSelectedId, selectedIdRef] = useStateWithRef<string | null>(null);
   const [draft, setDraft] = useState<ProviderDraft>({ ...emptyDraft });
   const [models, setModels] = useState<string[]>([]);
-  const [modelValue, setModelValue] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [importingProviders, setImportingProviders] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [tokenVisible, setTokenVisible] = useState(false);
   const [updateConfigFile, setUpdateConfigFile, updateConfigFileRef] = useStateWithRef(true);
   const draftRef = useRef<ProviderDraft>({ ...emptyDraft });
   const cleanDraftRef = useRef<ProviderDraft>({ ...emptyDraft });
-  const modelValueRef = useRef("");
   const modelComboboxRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<ProviderView | null>(null);
   const { healthCheckResults, healthCheckProvider } = useProviderHealth({ setMessage });
+
+  const {
+    modelValue,
+    claudeHaikuModel,
+    claudeOpusModel,
+    claudeSonnetModel,
+    modelMenuOpen,
+    modelMenuTarget,
+    modelValueRef,
+    claudeHaikuModelRef,
+    claudeOpusModelRef,
+    claudeSonnetModelRef,
+    setModelValue,
+    setClaudeHaikuModel,
+    setClaudeOpusModel,
+    setClaudeSonnetModel,
+    selectModel,
+    openModelMenu: openModelMenuBase,
+    setModelMenuOpen,
+    setModelMenuTarget,
+    syncModelRefs,
+    resetModelStates
+  } = useModelSelection({ draft, draftRef, setDraft });
 
   const syncTrayMenu = useCallback(() => {
     void refreshTrayMenu().catch((error) => {
@@ -75,18 +98,20 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     const nextModelValue = provider?.model || (provider?.id === next.activeProvider ? next.activeModel ?? "" : "");
     draftRef.current = nextDraft;
     cleanDraftRef.current = nextDraft;
-    modelValueRef.current = nextModelValue;
+    syncModelRefs(nextDraft, nextModelValue);
     setDraft(nextDraft);
     setModels(provider?.models ?? []);
-    setModelValue(nextModelValue);
-  }, [setMessage]);
+  }, [setMessage, syncModelRefs]);
 
   useEffect(() => {
     if (!modelMenuOpen) return;
 
     function handleOutsidePointerDown(event: PointerEvent) {
       const target = event.target;
-      if (target instanceof Node && !modelComboboxRef.current?.contains(target)) {
+      if (!(target instanceof Element)) return;
+      const insideCodexCombobox = modelComboboxRef.current?.contains(target) ?? false;
+      const insideClaudeGrid = target.closest(".claude-models-grid") !== null;
+      if (!insideCodexCombobox && !insideClaudeGrid) {
         setModelMenuOpen(false);
       }
     }
@@ -111,7 +136,15 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
   const isDirty = useMemo(() => {
     const current = comparableDraft(draft);
     const clean = comparableDraft(cleanDraftRef.current);
-    return current.name !== clean.name || current.baseUrl !== clean.baseUrl || current.model !== clean.model || current.token !== clean.token;
+    return (
+      current.name !== clean.name ||
+      current.baseUrl !== clean.baseUrl ||
+      current.model !== clean.model ||
+      current.token !== clean.token ||
+      current.claudeHaikuModel !== clean.claudeHaikuModel ||
+      current.claudeOpusModel !== clean.claudeOpusModel ||
+      current.claudeSonnetModel !== clean.claudeSonnetModel
+    );
   }, [draft]);
 
   const canSave = isDirty || updateConfigFile;
@@ -124,38 +157,18 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     });
   }, []);
 
-  const updateModelValue = useCallback((model: string) => {
-    modelValueRef.current = model;
-    setModelValue(model);
-  }, []);
-
-  const selectModel = useCallback((model: string) => {
-    updateModelValue(model);
-    setDraft((current) => {
-      const next = { ...current, model };
-      draftRef.current = next;
-      return next;
-    });
-    setModelMenuOpen(false);
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-  }, [updateModelValue]);
-
   const openCreateProvider = useCallback(() => {
     const nextDraft = { ...emptyDraft, toolType: stateRef.current?.activeTool ?? "codex" };
     setSelectedId(null);
     draftRef.current = nextDraft;
     cleanDraftRef.current = nextDraft;
-    modelValueRef.current = "";
+    resetModelStates();
     setDraft(nextDraft);
     setModels([]);
-    setModelMenuOpen(false);
-    setModelValue("");
     setTokenVisible(false);
     setMessage("");
     setEditorOpen(true);
-  }, [setMessage]);
+  }, [setMessage, resetModelStates]);
 
   const openEditProvider = useCallback(async (provider: ProviderView) => {
     setBusy(true);
@@ -168,11 +181,10 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setSelectedId(detail.id);
       draftRef.current = nextDraft;
       cleanDraftRef.current = nextDraft;
-      modelValueRef.current = nextModelValue;
+      syncModelRefs(nextDraft, nextModelValue);
       setDraft(nextDraft);
       setModels(detail.models ?? []);
       setModelMenuOpen(false);
-      setModelValue(nextModelValue);
       setTokenVisible(false);
       setEditorOpen(true);
     } catch (error) {
@@ -180,7 +192,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     } finally {
       setBusy(false);
     }
-  }, [setMessage]);
+  }, [setMessage, syncModelRefs]);
 
   const closeEditor = useCallback(() => {
     setEditorOpen(false);
@@ -293,12 +305,17 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
 
   const setCurrentProvider = useCallback(async (provider: ProviderView) => {
     const model = (provider.model || "").trim();
-    if (!model) {
+    const isClaude = provider.toolType === "claude";
+    const claudeFallback = (provider.claudeSonnetModel || provider.claudeOpusModel || provider.claudeHaikuModel || "").trim();
+    const hasClaudeModel = isClaude && claudeFallback;
+    if (!model && !hasClaudeModel) {
       setMessage("请先为该配置填写 Model。");
       return;
     }
+    const effectiveModel = model || claudeFallback;
     const shouldUpdateConfig = updateConfigFileRef.current;
-    if (shouldUpdateConfig && !provider.tokenPresent) {
+    const tokenRequired = provider.toolType !== "codex" || !provider.requiresOpenaiAuth;
+    if (shouldUpdateConfig && tokenRequired && !provider.tokenPresent) {
       setMessage("请先为该配置填写 Token。");
       return;
     }
@@ -306,7 +323,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     setBusy(true);
     setMessage("");
     try {
-      await setCurrentModelCommand(provider.id, model, "", shouldUpdateConfig);
+      await setCurrentModelCommand(provider.id, effectiveModel, "", shouldUpdateConfig);
       setEditorOpen(false);
       setModels([]);
       setModelMenuOpen(false);
@@ -316,9 +333,9 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
           ? {
               ...current,
               activeProvider: provider.id,
-              activeModel: model,
+              activeModel: effectiveModel,
               providers: current.providers.map((item) =>
-                item.id === provider.id ? { ...item, model } : item
+                item.id === provider.id ? { ...item, model: effectiveModel } : item
               )
             }
           : current
@@ -341,16 +358,22 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     const draftToSave: ProviderDraft = { ...draftRef.current, model };
     const baseUrl = draftToSave.baseUrl.trim();
     const shouldUpdateConfig = updateConfigFileRef.current;
+    const isClaude = draftToSave.toolType === "claude";
+    const hasClaudeModel = isClaude && (
+      draftToSave.claudeHaikuModel.trim() || draftToSave.claudeOpusModel.trim() || draftToSave.claudeSonnetModel.trim()
+    );
+    const hasModel = model || hasClaudeModel;
 
     if (!baseUrl) {
       setMessage("请先填写 Base URL。");
       return;
     }
-    if (shouldUpdateConfig && !model) {
+    if (shouldUpdateConfig && !hasModel) {
       setMessage("请先选择 Model，或关闭更新配置文件。");
       return;
     }
-    if (shouldUpdateConfig && !draftToSave.token.trim()) {
+    const tokenRequired = draftToSave.toolType !== "codex" || !draftToSave.requiresOpenaiAuth;
+    if (shouldUpdateConfig && tokenRequired && !draftToSave.token.trim()) {
       setMessage("请先填写 Token，或关闭更新配置文件。");
       return;
     }
@@ -368,7 +391,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setModels([]);
       setModelMenuOpen(false);
       syncTrayMenu();
-      setMessage(shouldUpdateConfig && model ? "已保存配置并写入当前模型。" : "已保存配置。");
+      setMessage(shouldUpdateConfig && hasModel ? "已保存配置并写入当前模型。" : "已保存配置。");
     } catch (error) {
       const detail = errorMessage(error);
       if (savedProvider) {
@@ -425,7 +448,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
         originalId: fetchedProviderId || draftRef.current.originalId,
         model: nextModel
       };
-      updateModelValue(nextModel);
+      setModelValue(nextModel);
       setModelMenuOpen(result.models.length > 0);
       if (knownProvider) {
         setState((current) =>
@@ -456,7 +479,7 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
       setLoadingModels(false);
       setMessagePaused(false);
     }
-  }, [setMessage, setMessagePaused, refresh, updateModelValue]);
+  }, [setMessage, setMessagePaused, refresh, setModelValue]);
 
   const restartCodex = useCallback(async () => {
     setRestarting(true);
@@ -475,6 +498,12 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     setTokenVisible((visible) => !visible);
   }, []);
 
+  const openModelMenu = useCallback((target: ModelTarget) => {
+    openModelMenuBase(target, models.length);
+  }, [models.length, openModelMenuBase]);
+
+  const claudeModelComboboxRef = useRef<HTMLDivElement>(null);
+
   return {
     state,
     selected,
@@ -482,6 +511,9 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     draft,
     models,
     modelValue,
+    claudeHaikuModel,
+    claudeOpusModel,
+    claudeSonnetModel,
     providerCount,
     activeProvider,
     editorOpen,
@@ -490,13 +522,19 @@ export function useProviderEditor({ setMessage, setMessagePaused }: UseProviderE
     restarting,
     loadingModels,
     modelMenuOpen,
+    modelMenuTarget,
     tokenVisible,
     updateConfigFile,
     canSave,
     modelComboboxRef,
     setUpdateConfigFile,
     setModelMenuOpen,
-    setModelValue: updateModelValue,
+    setModelMenuTarget,
+    setModelValue,
+    setClaudeHaikuModel,
+    setClaudeOpusModel,
+    setClaudeSonnetModel,
+    openModelMenu,
     toggleTokenVisible,
     refresh,
     restartCodex,

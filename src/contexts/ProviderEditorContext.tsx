@@ -1,5 +1,6 @@
 import { createContext, useContext, type RefObject, type ReactNode } from "react";
 import type { AppState, HealthStatus, ProviderDraft, ProviderView } from "../lib/types";
+import type { ModelTarget } from "../hooks/useProviderEditor";
 
 export type ProviderEditorContextValue = {
   state: AppState | null;
@@ -8,6 +9,9 @@ export type ProviderEditorContextValue = {
   draft: ProviderDraft;
   models: string[];
   modelValue: string;
+  claudeHaikuModel: string;
+  claudeOpusModel: string;
+  claudeSonnetModel: string;
   providerCount: number;
   activeProvider: ProviderView | null;
   editorOpen: boolean;
@@ -16,6 +20,7 @@ export type ProviderEditorContextValue = {
   restarting: boolean;
   loadingModels: boolean;
   modelMenuOpen: boolean;
+  modelMenuTarget: ModelTarget;
   tokenVisible: boolean;
   updateConfigFile: boolean;
   canSave: boolean;
@@ -24,7 +29,12 @@ export type ProviderEditorContextValue = {
   healthCheckProvider: (provider: ProviderView) => Promise<void>;
   setUpdateConfigFile: (enabled: boolean) => void;
   setModelMenuOpen: (open: boolean | ((current: boolean) => boolean)) => void;
+  setModelMenuTarget: (target: ModelTarget) => void;
   setModelValue: (model: string) => void;
+  setClaudeHaikuModel: (model: string) => void;
+  setClaudeOpusModel: (model: string) => void;
+  setClaudeSonnetModel: (model: string) => void;
+  openModelMenu: (target: ModelTarget) => void;
   toggleTokenVisible: () => void;
   refresh: (options?: { preferredId?: string | null }) => Promise<void>;
   restartCodex: () => Promise<void>;
@@ -37,7 +47,7 @@ export type ProviderEditorContextValue = {
   removeProvider: (providerId: string) => Promise<void>;
   closeEditor: () => void;
   updateDraft: (patch: Partial<ProviderDraft>) => void;
-  selectModel: (model: string) => void;
+  selectModel: (model: string, target?: ModelTarget) => void;
   fetchProviderModels: () => Promise<void>;
   saveCurrentProvider: () => Promise<void>;
 };

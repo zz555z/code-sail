@@ -154,17 +154,9 @@ export function App() {
     [activeTool, toolSwitching, handleToolSwitch]
   );
 
-  const providerEditorValue = useMemo(
-    () => providerEditor,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [providerEditor.state, providerEditor.selected, providerEditor.selectedId, providerEditor.draft, providerEditor.models, providerEditor.modelValue, providerEditor.providerCount, providerEditor.activeProvider, providerEditor.editorOpen, providerEditor.busy, providerEditor.importingProviders, providerEditor.restarting, providerEditor.loadingModels, providerEditor.modelMenuOpen, providerEditor.tokenVisible, providerEditor.updateConfigFile, providerEditor.canSave, providerEditor.healthCheckResults]
-  );
+  const providerEditorValue = useMemo(() => providerEditor, [providerEditor]);
 
-  const historyValue = useMemo(
-    () => historySessions,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [historySessions.historyGroups, historySessions.historyConversation, historySessions.selectedHistoryPath, historySessions.selectedHistorySession, historySessions.expandedHistoryProviders, historySessions.historyLoading, historySessions.historyBusy, historySessions.historyProviderStats, historySessions.topHistoryProviderStats, historySessions.historySessionCount, historySessions.historyMessageCount, historySessions.latestHistorySession]
-  );
+  const historyValue = useMemo(() => historySessions, [historySessions]);
 
   const navItems: Array<{ id: PageId; label: string; icon: ReactNode }> = useMemo(
     () => [

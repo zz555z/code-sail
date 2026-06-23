@@ -9,8 +9,13 @@ export type ProviderView = {
   baseUrl: string | null;
   model: string | null;
   models: string[];
+  wireApi: string;
+  requiresOpenaiAuth: boolean;
   tokenPresent: boolean;
   toolType: ToolType;
+  claudeHaikuModel: string | null;
+  claudeOpusModel: string | null;
+  claudeSonnetModel: string | null;
 };
 
 export type ProviderDetail = ProviderView & {
@@ -52,8 +57,13 @@ export type ProviderDraft = {
   name: string;
   baseUrl: string;
   model: string;
+  wireApi: string;
+  requiresOpenaiAuth: boolean;
   token: string;
   toolType: ToolType;
+  claudeHaikuModel: string;
+  claudeOpusModel: string;
+  claudeSonnetModel: string;
 };
 
 export type FetchModelsResponse = {

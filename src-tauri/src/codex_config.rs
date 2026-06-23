@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use reqwest::Url;
 use serde_json::Value;
 use std::{
     collections::HashSet,
@@ -333,6 +334,10 @@ pub(crate) fn normalize_model_list_base_url(input: &str) -> String {
         return String::new();
     }
 
+    if let Some(origin) = url_origin(&url) {
+        return format!("{origin}/v1");
+    }
+
     for suffix in [
         "/v1/messages/count_tokens",
         "/v1/messages",
@@ -347,6 +352,17 @@ pub(crate) fn normalize_model_list_base_url(input: &str) -> String {
     }
 
     normalize_base_url(&url)
+}
+
+fn url_origin(input: &str) -> Option<String> {
+    let parsed = Url::parse(input).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+
+    let host = parsed.host_str()?;
+    let port = parsed.port().map(|port| format!(":{port}")).unwrap_or_default();
+    Some(format!("{}://{}{}", parsed.scheme(), host, port))
 }
 
 pub(crate) fn parse_model_ids(body: &Value) -> Vec<String> {
@@ -500,6 +516,14 @@ mod tests {
         assert_eq!(
             normalize_model_list_base_url("https://api.example.com/v1/messages/count_tokens"),
             "https://api.example.com/v1"
+        );
+        assert_eq!(
+            normalize_model_list_base_url("https://api.example.com/custom/path?token=abc"),
+            "https://api.example.com/v1"
+        );
+        assert_eq!(
+            normalize_model_list_base_url("https://api.example.com:8443/anything/v1/models"),
+            "https://api.example.com:8443/v1"
         );
     }
 

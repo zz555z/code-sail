@@ -12,8 +12,13 @@
         "baseUrl": "string | null",
         "model": "string | null",
         "models": "string[]",
+        "wireApi": "string",
+        "requiresOpenaiAuth": "boolean",
         "tokenPresent": "boolean",
-        "toolType": "ToolType"
+        "toolType": "ToolType",
+        "claudeHaikuModel": "string | null",
+        "claudeOpusModel": "string | null",
+        "claudeSonnetModel": "string | null"
       }
     },
     {
@@ -66,8 +71,13 @@
         "name": "string",
         "baseUrl": "string",
         "model": "string",
+        "wireApi": "string",
+        "requiresOpenaiAuth": "boolean",
         "token": "string",
-        "toolType": "ToolType"
+        "toolType": "ToolType",
+        "claudeHaikuModel": "string",
+        "claudeOpusModel": "string",
+        "claudeSonnetModel": "string"
       }
     },
     {

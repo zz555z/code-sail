@@ -167,6 +167,10 @@
     grid-template-columns: 1fr;
   }
 
+  .advanced-grid {
+    grid-template-columns: 1fr;
+  }
+
   .history-layout {
     grid-template-columns: 1fr;
     overflow: auto;

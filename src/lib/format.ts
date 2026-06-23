@@ -13,19 +13,24 @@ export function formatHistoryTime(timestamp: number | null) {
   return historyTimeFormatter.format(new Date(milliseconds));
 }
 
-export function roleLabel(role: string) {
-  const normalized = role.trim().toLowerCase();
-  if (normalized === "user") return "User";
-  if (normalized === "assistant") return "Assistant";
-  if (normalized === "system") return "System";
-  if (normalized === "tool") return "Tool";
-  return role || "Unknown";
+const ROLE_LABELS: Record<string, string> = {
+  user: "User",
+  assistant: "Assistant",
+  system: "System",
+  tool: "Tool"
+};
+
+function normalizeRole(role: string): string {
+  return role.trim().toLowerCase();
 }
 
-export function roleClass(role: string) {
-  const normalized = role.trim().toLowerCase();
-  if (["user", "assistant", "system", "tool"].includes(normalized)) return normalized;
-  return "other";
+export function roleLabel(role: string): string {
+  return ROLE_LABELS[normalizeRole(role)] || role || "Unknown";
+}
+
+export function roleClass(role: string): string {
+  const normalized = normalizeRole(role);
+  return ROLE_LABELS[normalized] ? normalized : "other";
 }
 
 export function formatDeleteHistoryFailure(result: DeleteHistoryResponse) {

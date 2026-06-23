@@ -53,17 +53,32 @@ pub(crate) fn sync_claude_settings(conn: &SqliteConnection, config_path: &Path) 
                     clear_claude_managed_env_vars(env);
 
                     if let Some(ref token) = provider.token {
-                        write_claude_env_string(env, ANTHROPIC_AUTH_TOKEN_ENV, token);
+                        if provider.requires_open_ai_auth {
+                            write_claude_env_string(env, ANTHROPIC_API_KEY_ENV, token);
+                        } else {
+                            write_claude_env_string(env, ANTHROPIC_AUTH_TOKEN_ENV, token);
+                        }
                     }
 
                     write_claude_env_string(env, ANTHROPIC_BASE_URL_ENV, base_url);
 
-                    let model = active_model
+                    let fallback_model = active_model
                         .as_deref()
                         .filter(|model| !model.trim().is_empty())
                         .or_else(|| provider.model.as_deref().filter(|model| !model.trim().is_empty()));
-                    if let Some(model) = model {
-                        write_claude_default_model_env(env, model);
+
+                    let haiku_model = provider.claude_haiku_model.as_deref().filter(|m| !m.trim().is_empty()).or(fallback_model);
+                    let opus_model = provider.claude_opus_model.as_deref().filter(|m| !m.trim().is_empty()).or(fallback_model);
+                    let sonnet_model = provider.claude_sonnet_model.as_deref().filter(|m| !m.trim().is_empty()).or(fallback_model);
+
+                    if let Some(model) = haiku_model {
+                        write_claude_env_string(env, ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV, model);
+                    }
+                    if let Some(model) = opus_model {
+                        write_claude_env_string(env, ANTHROPIC_DEFAULT_OPUS_MODEL_ENV, model);
+                    }
+                    if let Some(model) = sonnet_model {
+                        write_claude_env_string(env, ANTHROPIC_DEFAULT_SONNET_MODEL_ENV, model);
                     }
                 }
 
@@ -110,15 +125,6 @@ fn write_claude_env_string(
     }
 
     env.insert(key.to_string(), Value::String(value.to_string()));
-}
-
-fn write_claude_default_model_env(
-    env: &mut serde_json::Map<String, Value>,
-    model: &str,
-) {
-    write_claude_env_string(env, ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV, model);
-    write_claude_env_string(env, ANTHROPIC_DEFAULT_OPUS_MODEL_ENV, model);
-    write_claude_env_string(env, ANTHROPIC_DEFAULT_SONNET_MODEL_ENV, model);
 }
 
 fn clear_claude_settings(root: &mut Value) {
