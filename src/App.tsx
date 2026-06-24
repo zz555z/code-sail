@@ -105,6 +105,20 @@ export function App() {
     };
   }, [providerEditor.refresh, setMessage]);
 
+  useEffect(() => {
+    const unlisten = listen<ToolType>("tray-switch-tool", (event) => {
+      void Promise.allSettled([
+        loadActiveTool(),
+        providerEditor.refresh({ preferredId: null })
+      ]);
+      setMessage(`已通过托盘切换到 ${event.payload === "claude" ? "Claude" : "Codex"}。`);
+    });
+
+    return () => {
+      void unlisten.then((stopListening) => stopListening());
+    };
+  }, [loadActiveTool, providerEditor.refresh, setMessage]);
+
   const handleToolSwitch = useCallback(async (tool: ToolType) => {
     setMessage("");
     await switchTool(tool);

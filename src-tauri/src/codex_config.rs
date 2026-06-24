@@ -11,7 +11,7 @@ use toml_edit::{value, DocumentMut, Item, Table};
 use crate::file_util;
 use crate::storage::{
     get_active_model, get_active_provider, get_provider_token, get_setting,
-    list_stored_providers, optional_non_empty, restrict_file_permissions, set_active_model,
+    list_stored_providers, optional_non_empty, set_active_model,
     set_active_provider, set_setting, with_transaction, SqliteConnection, SqlValue, ToolType,
 };
 
@@ -271,13 +271,7 @@ fn read_config(config_path: &Path) -> Result<DocumentMut> {
 }
 
 fn write_config(config_path: &Path, document: &DocumentMut) -> Result<()> {
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
-    }
-    fs::write(config_path, document.to_string())
-        .with_context(|| format!("failed to write {}", config_path.display()))?;
-    restrict_file_permissions(config_path)?;
+    file_util::atomic_write_restricted(config_path, &document.to_string())?;
     Ok(())
 }
 
@@ -632,9 +626,7 @@ fn write_auth_token(config_path: &Path, token: &str) -> Result<()> {
 
     root["OPENAI_API_KEY"] = Value::String(token.to_string());
     let encoded = serde_json::to_string_pretty(&root).context("failed to encode auth.json")?;
-    fs::write(&auth_path, format!("{encoded}\n"))
-        .with_context(|| format!("failed to write {}", auth_path.display()))?;
-    restrict_file_permissions(&auth_path)?;
+    file_util::atomic_write_restricted(&auth_path, &format!("{encoded}\n"))?;
     Ok(())
 }
 
@@ -653,8 +645,6 @@ fn clear_auth_token(config_path: &Path) -> Result<()> {
     }
 
     let encoded = serde_json::to_string_pretty(&root).context("failed to encode auth.json")?;
-    fs::write(&auth_path, format!("{encoded}\n"))
-        .with_context(|| format!("failed to write {}", auth_path.display()))?;
-    restrict_file_permissions(&auth_path)?;
+    file_util::atomic_write_restricted(&auth_path, &format!("{encoded}\n"))?;
     Ok(())
 }

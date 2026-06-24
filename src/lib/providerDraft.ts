@@ -1,5 +1,7 @@
 import type { ProviderDetail, ProviderDraft, ProviderView, ToolType } from "./types";
 
+export type ProviderTokenAction = "keep" | "replace" | "clear";
+
 export const emptyDraft: ProviderDraft = {
   originalId: null,
   name: "",
@@ -43,4 +45,20 @@ export function comparableDraft(draft: ProviderDraft) {
     claudeOpusModel: draft.claudeOpusModel.trim(),
     claudeSonnetModel: draft.claudeSonnetModel.trim()
   };
+}
+
+export function draftsEqual(left: ProviderDraft, right: ProviderDraft): boolean {
+  const current = comparableDraft(left);
+  const clean = comparableDraft(right);
+  return (Object.keys(current) as Array<keyof typeof current>).every(
+    (key) => current[key] === clean[key]
+  );
+}
+
+export function tokenActionFromDraft(draft: ProviderDraft, cleanDraft: ProviderDraft): ProviderTokenAction {
+  const currentToken = draft.token.trim();
+  const cleanToken = cleanDraft.token.trim();
+
+  if (currentToken === cleanToken) return "keep";
+  return currentToken ? "replace" : "clear";
 }

@@ -23,6 +23,7 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
   const [historyBusy, setHistoryBusy] = useState(false);
   const [expandedHistoryProviders, setExpandedHistoryProviders] = useState<Record<string, boolean>>({});
   const selectedHistoryPathRef = useRef(selectedHistoryPath);
+  const historyRequestRef = useRef(0);
   selectedHistoryPathRef.current = selectedHistoryPath;
 
   const allHistorySessions = useMemo(() => historyGroups.flatMap((group) => group.sessions), [historyGroups]);
@@ -59,6 +60,7 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
   );
 
   useEffect(() => {
+    historyRequestRef.current += 1;
     setHistoryGroups([]);
     setHistoryConversation(null);
     setSelectedHistoryPath(null);
@@ -66,10 +68,13 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
   }, [activeTool]);
 
   const refreshHistory = useCallback(async (options?: { preferredPath?: string | null }) => {
+    const requestId = historyRequestRef.current + 1;
+    historyRequestRef.current = requestId;
     setHistoryLoading(true);
     setMessage("");
     try {
       const groups = await listHistorySessions(activeTool);
+      if (requestId !== historyRequestRef.current) return;
       const sessions = groups.flatMap((group) => group.sessions);
       const hasPreferredPath = Object.prototype.hasOwnProperty.call(options || {}, "preferredPath");
       const desiredPath = hasPreferredPath ? options?.preferredPath ?? null : selectedHistoryPathRef.current;
@@ -77,6 +82,8 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
         desiredPath && sessions.some((session) => session.path === desiredPath)
           ? desiredPath
           : sessions[0]?.path ?? null;
+      const conversation = nextSelectedPath ? await readHistorySession(nextSelectedPath, activeTool) : null;
+      if (requestId !== historyRequestRef.current) return;
 
       setHistoryGroups(groups);
       setExpandedHistoryProviders((current) => {
@@ -87,26 +94,36 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
         return next;
       });
       setSelectedHistoryPath(nextSelectedPath);
-      setHistoryConversation(nextSelectedPath ? await readHistorySession(nextSelectedPath, activeTool) : null);
+      setHistoryConversation(conversation);
     } catch (error) {
+      if (requestId !== historyRequestRef.current) return;
       setHistoryConversation(null);
       setMessage(errorMessage(error));
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestRef.current) {
+        setHistoryLoading(false);
+      }
     }
   }, [activeTool, setMessage]);
 
   const openHistorySession = useCallback(async (session: HistorySessionSummary) => {
+    const requestId = historyRequestRef.current + 1;
+    historyRequestRef.current = requestId;
     setSelectedHistoryPath(session.path);
     setHistoryLoading(true);
     setMessage("");
     try {
-      setHistoryConversation(await readHistorySession(session.path, activeTool));
+      const conversation = await readHistorySession(session.path, activeTool);
+      if (requestId !== historyRequestRef.current) return;
+      setHistoryConversation(conversation);
     } catch (error) {
+      if (requestId !== historyRequestRef.current) return;
       setHistoryConversation(null);
       setMessage(errorMessage(error));
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestRef.current) {
+        setHistoryLoading(false);
+      }
     }
   }, [activeTool, setMessage]);
 
@@ -164,7 +181,7 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
     }
   }, [activeTool, setMessage, refreshHistory]);
 
-  return {
+  return useMemo(() => ({
     historyGroups,
     historyConversation,
     selectedHistoryPath,
@@ -183,5 +200,24 @@ export function useHistorySessions({ activeTool, setMessage }: UseHistorySession
     resumeHistory,
     removeHistorySession,
     removeHistoryProvider
-  };
+  }), [
+    historyGroups,
+    historyConversation,
+    selectedHistoryPath,
+    selectedHistorySession,
+    expandedHistoryProviders,
+    historyLoading,
+    historyBusy,
+    historyProviderStats,
+    topHistoryProviderStats,
+    historySessionCount,
+    historyMessageCount,
+    latestHistorySession,
+    refreshHistory,
+    openHistorySession,
+    toggleHistoryProvider,
+    resumeHistory,
+    removeHistorySession,
+    removeHistoryProvider
+  ]);
 }

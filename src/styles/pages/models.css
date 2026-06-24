@@ -359,12 +359,6 @@ input[type="checkbox"] {
   background: var(--mint);
 }
 
-.model-field-stack {
-  display: grid;
-  gap: 9px;
-  min-width: 0;
-}
-
 .claude-models-grid {
   display: grid;
   grid-template-columns: 1fr;

@@ -7,8 +7,7 @@ use std::{
 
 use crate::file_util;
 use crate::storage::{
-    get_active_model, get_active_provider, get_provider, restrict_file_permissions,
-    SqliteConnection, ToolType,
+    get_active_model, get_active_provider, get_provider, SqliteConnection, ToolType,
 };
 
 const CLAUDE_SETTINGS_SCHEMA: &str = "https://json.schemastore.org/claude-code-settings.json";
@@ -183,8 +182,6 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
     file_util::backup_file_if_exists(path)?;
 
     let encoded = serde_json::to_string_pretty(value).context("failed to encode settings.json")?;
-    fs::write(path, format!("{encoded}\n"))
-        .with_context(|| format!("failed to write {}", path.display()))?;
-    restrict_file_permissions(path)?;
+    file_util::atomic_write_restricted(path, &format!("{encoded}\n"))?;
     Ok(())
 }

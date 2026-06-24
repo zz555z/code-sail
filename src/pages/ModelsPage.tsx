@@ -23,6 +23,7 @@ import { useMessage } from "../contexts/MessageContext";
 import { useProviderEditorContext } from "../contexts/ProviderEditorContext";
 import { useProviderReorder } from "../hooks/useProviderReorder";
 import type { ProviderView, ToolType } from "../lib/types";
+import { errorMessage } from "../lib/utils";
 
 type ToolIconProps = SVGProps<SVGSVGElement> & { title?: string };
 
@@ -76,7 +77,7 @@ const toolOptions: Array<{ value: ToolType; label: string; icon: (props: ToolIco
 ];
 
 export function ModelsPage() {
-  const { message, messageClassName, dismissMessage } = useMessage();
+  const { message, messageClassName, setMessage, dismissMessage } = useMessage();
   const { activeTool, switching: toolSwitching, switchTool } = useActiveToolContext();
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [showImportPrompt, setShowImportPrompt] = useState(false);
@@ -170,6 +171,16 @@ export function ModelsPage() {
   const activeProviderId = state?.activeProvider ?? null;
   const activeModel = state?.activeModel ?? "";
 
+  const displayProviders = useMemo(() => {
+    if (!activeProviderId) return providers;
+    const activeProvider = providers.find((provider) => provider.id === activeProviderId);
+    if (!activeProvider) return providers;
+    return [
+      activeProvider,
+      ...providers.filter((provider) => provider.id !== activeProviderId)
+    ];
+  }, [activeProviderId, providers]);
+
   const providerMap = useMemo(() => {
     const map = new Map<string, ProviderView>();
     for (const provider of providers) {
@@ -208,10 +219,26 @@ export function ModelsPage() {
     firstInput?.focus();
   }, [editorOpen]);
 
+  const isProviderDraggable = useCallback((providerId: string) => providerId !== activeProviderId, [activeProviderId]);
+
+  const persistedIdsFromDisplayOrder = useCallback((displayProviderIds: string[]) => {
+    if (!activeProviderId) return displayProviderIds;
+
+    const unpinnedIds = displayProviderIds.filter((providerId) => providerId !== activeProviderId);
+    let nextIndex = 0;
+    return providers.map((provider) => (
+      provider.id === activeProviderId
+        ? provider.id
+        : unpinnedIds[nextIndex++] ?? provider.id
+    ));
+  }, [activeProviderId, providers]);
+
   const { draggingProviderId, dragOverTarget, handleProviderPointerDown } = useProviderReorder({
-    providers,
+    providers: displayProviders,
     busy,
-    reorderProviders
+    reorderProviders,
+    getPersistedProviderIds: persistedIdsFromDisplayOrder,
+    isProviderDraggable
   });
 
   const toast = <NotificationToast message={message} messageClassName={messageClassName} onDismiss={dismissMessage} />;
@@ -317,7 +344,9 @@ export function ModelsPage() {
                           onClick={() => {
                             setToolDropdownOpen(false);
                             if (!isActive) {
-                              void switchTool(option.value);
+                              void switchTool(option.value).catch((error) => {
+                                setMessage(errorMessage(error));
+                              });
                             }
                           }}
                         >
@@ -382,8 +411,8 @@ export function ModelsPage() {
           {toast}
 
           <div className="config-list" role="list" aria-label="模型配置列表">
-            {providers.length ? (
-              providers.map((provider) => (
+            {displayProviders.length ? (
+              displayProviders.map((provider) => (
                 <ProviderRow
                   key={provider.id}
                   provider={provider}
@@ -399,8 +428,13 @@ export function ModelsPage() {
                   dragOverPlacement={
                     dragOverTarget?.providerId === provider.id ? dragOverTarget.placement : null
                   }
+                  reorderDisabled={provider.id === activeProviderId}
                   healthStatus={healthCheckResults[provider.id]}
-                  onPointerDown={(event) => handleProviderPointerDown(event, provider.id)}
+                  onPointerDown={
+                    provider.id === activeProviderId
+                      ? undefined
+                      : (event) => handleProviderPointerDown(event, provider.id)
+                  }
                   onEdit={() => handleEditProvider(provider.id)}
                   onCopy={() => handleCopyProvider(provider.id)}
                   onSetCurrent={() => handleSetCurrentProvider(provider.id)}
@@ -528,30 +562,30 @@ export function ModelsPage() {
                 </div>
               ) : (
                 <div className="field-group wide">
-                  <span>Model</span>
-                  <div className="model-field-stack">
-                    <ModelCombobox
-                      value={modelValue}
-                      models={models}
-                      menuOpen={modelMenuOpen}
-                      containerRef={modelComboboxRef}
-                      onChange={(nextModel) => {
-                        setModelValue(nextModel);
-                        updateDraft({ model: nextModel });
-                      }}
-                      onSelect={selectModel}
-                      onMenuToggle={setModelMenuOpen}
-                    />
+                  <div className="claude-model-header">
+                    <span>Model</span>
                     <button
                       className="fetch-button"
                       type="button"
                       onClick={() => void fetchProviderModels()}
                       disabled={loadingModels || busy}
                     >
-                      <RefreshCw size={17} />
+                      <RefreshCw size={15} />
                       {loadingModels ? "获取中" : "获取模型"}
                     </button>
                   </div>
+                  <ModelCombobox
+                    value={modelValue}
+                    models={models}
+                    menuOpen={modelMenuOpen}
+                    containerRef={modelComboboxRef}
+                    onChange={(nextModel) => {
+                      setModelValue(nextModel);
+                      updateDraft({ model: nextModel });
+                    }}
+                    onSelect={selectModel}
+                    onMenuToggle={setModelMenuOpen}
+                  />
                 </div>
               )}
 

@@ -116,6 +116,10 @@ export function useModelSelection({ draft, draftRef, setDraft }: UseModelSelecti
     setModelMenuOpen(false);
   }, []);
 
+  const setClaudeHaikuModel = useCallback((value: string) => setClaudeModel("haiku", value), [setClaudeModel]);
+  const setClaudeOpusModel = useCallback((value: string) => setClaudeModel("opus", value), [setClaudeModel]);
+  const setClaudeSonnetModel = useCallback((value: string) => setClaudeModel("sonnet", value), [setClaudeModel]);
+
   return {
     modelValue,
     claudeHaikuModel,
@@ -128,9 +132,9 @@ export function useModelSelection({ draft, draftRef, setDraft }: UseModelSelecti
     claudeOpusModelRef,
     claudeSonnetModelRef,
     setModelValue: updateModelValue,
-    setClaudeHaikuModel: (value: string) => setClaudeModel("haiku", value),
-    setClaudeOpusModel: (value: string) => setClaudeModel("opus", value),
-    setClaudeSonnetModel: (value: string) => setClaudeModel("sonnet", value),
+    setClaudeHaikuModel,
+    setClaudeOpusModel,
+    setClaudeSonnetModel,
     selectModel,
     openModelMenu,
     setModelMenuOpen,

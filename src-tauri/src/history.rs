@@ -109,6 +109,11 @@ struct CachedSummary {
     result: Option<SessionParseResult>,
 }
 
+struct SessionFileEntry {
+    path: PathBuf,
+    modified_millis: u128,
+}
+
 static SUMMARY_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedSummary>>> = OnceLock::new();
 
 const MAX_SESSIONS: usize = 200;
@@ -175,14 +180,15 @@ fn list_history_sessions_inner(tool_type: ToolType) -> Result<Vec<HistoryProvide
     prune_summary_cache(&session_files);
 
     session_files.sort_by(|left, right| {
-        file_modified_millis(right)
-            .cmp(&file_modified_millis(left))
-            .then_with(|| left.cmp(right))
+        right
+            .modified_millis
+            .cmp(&left.modified_millis)
+            .then_with(|| left.path.cmp(&right.path))
     });
 
     let mut all_sessions = Vec::<HistorySessionSummary>::new();
     for session_file in &session_files {
-        if let Some(summary) = parse_session_file_cached(session_file, tool_type)? {
+        if let Some(summary) = parse_session_file_cached(&session_file.path, tool_type)? {
             all_sessions.push(summary);
             if all_sessions.len() >= MAX_SESSIONS {
                 break;
@@ -219,11 +225,14 @@ fn list_history_sessions_inner(tool_type: ToolType) -> Result<Vec<HistoryProvide
     Ok(grouped)
 }
 
-fn prune_summary_cache(session_files: &[PathBuf]) {
+fn prune_summary_cache(session_files: &[SessionFileEntry]) {
     let Some(cache) = SUMMARY_CACHE.get() else {
         return;
     };
-    let live_paths = session_files.iter().collect::<HashSet<_>>();
+    let live_paths = session_files
+        .iter()
+        .map(|entry| &entry.path)
+        .collect::<HashSet<_>>();
     if let Ok(mut items) = cache.lock() {
         items.retain(|path, _| live_paths.contains(path));
     }
@@ -267,14 +276,6 @@ fn parse_session_file_cached(
 fn system_time_millis(time: SystemTime) -> u128 {
     time.duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
-        .unwrap_or_default()
-}
-
-fn file_modified_millis(path: &Path) -> u128 {
-    fs::metadata(path)
-        .ok()
-        .and_then(|metadata| metadata.modified().ok())
-        .map(system_time_millis)
         .unwrap_or_default()
 }
 
@@ -393,7 +394,7 @@ fn sessions_root(tool_type: ToolType) -> Result<PathBuf> {
     })
 }
 
-fn collect_session_files(dir: &Path, session_files: &mut Vec<PathBuf>) -> Result<()> {
+fn collect_session_files(dir: &Path, session_files: &mut Vec<SessionFileEntry>) -> Result<()> {
     for entry in fs::read_dir(dir).with_context(|| format!("无法读取目录: {}", dir.display()))? {
         let entry = entry.with_context(|| format!("无法读取目录项: {}", dir.display()))?;
         let file_type = entry
@@ -403,7 +404,16 @@ fn collect_session_files(dir: &Path, session_files: &mut Vec<PathBuf>) -> Result
         if file_type.is_dir() {
             collect_session_files(&path, session_files)?;
         } else if file_type.is_file() && path.extension().and_then(|item| item.to_str()) == Some("jsonl") {
-            session_files.push(path);
+            let modified_millis = entry
+                .metadata()
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .map(system_time_millis)
+                .unwrap_or_default();
+            session_files.push(SessionFileEntry {
+                path,
+                modified_millis,
+            });
         }
     }
 

@@ -15,6 +15,7 @@ import type {
   ToolStatus,
   ToolType
 } from "./types";
+import type { ProviderTokenAction } from "./providerDraft";
 
 async function invokeCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
@@ -40,10 +41,15 @@ export async function openAppUpdate(): Promise<void> {
   await invokeCommand<void>("open_app_update");
 }
 
-export async function saveProvider(provider: ProviderDraft, updateConfig: boolean): Promise<SaveProviderResponse> {
+export async function saveProvider(
+  provider: ProviderDraft,
+  updateConfig: boolean,
+  tokenAction: ProviderTokenAction
+): Promise<SaveProviderResponse> {
   return await invokeCommand<SaveProviderResponse>("save_provider", {
     input: {
       ...provider,
+      tokenAction,
       updateConfig
     }
   });

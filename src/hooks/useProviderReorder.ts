@@ -10,22 +10,41 @@ type UseProviderReorderOptions = {
   providers: ProviderView[];
   busy: boolean;
   reorderProviders: (providerIds: string[]) => Promise<void>;
+  getPersistedProviderIds?: (displayProviderIds: string[]) => string[];
+  isProviderDraggable?: (providerId: string) => boolean;
 };
 
-export function useProviderReorder({ providers, busy, reorderProviders }: UseProviderReorderOptions) {
+export function useProviderReorder({
+  providers,
+  busy,
+  reorderProviders,
+  getPersistedProviderIds,
+  isProviderDraggable
+}: UseProviderReorderOptions) {
   const [draggingProviderId, setDraggingProviderId] = useState<string | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<DragOverTarget>(null);
   const providersRef = useRef<ProviderView[]>([]);
+  const getPersistedProviderIdsRef = useRef(getPersistedProviderIds);
+  const isProviderDraggableRef = useRef(isProviderDraggable);
   const draggingProviderIdRef = useRef<string | null>(null);
   const dragOverTargetRef = useRef<DragOverTarget>(null);
   const dragRowRectsRef = useRef<DragRowRect[]>([]);
   const canDragProvidersRef = useRef(false);
 
-  const canDragProviders = providers.length > 1 && !busy;
+  const canDragProviders =
+    providers.filter((provider) => isProviderDraggable?.(provider.id) ?? true).length > 1 && !busy;
 
   useEffect(() => {
     providersRef.current = providers;
   }, [providers]);
+
+  useEffect(() => {
+    getPersistedProviderIdsRef.current = getPersistedProviderIds;
+  }, [getPersistedProviderIds]);
+
+  useEffect(() => {
+    isProviderDraggableRef.current = isProviderDraggable;
+  }, [isProviderDraggable]);
 
   useEffect(() => {
     canDragProvidersRef.current = canDragProviders;
@@ -47,7 +66,8 @@ export function useProviderReorder({ providers, busy, reorderProviders }: UsePro
     if (targetIndex < 0) return;
 
     remainingIds.splice(placement === "after" ? targetIndex + 1 : targetIndex, 0, sourceId);
-    void reorderProviders(remainingIds);
+    const persistedIds = getPersistedProviderIdsRef.current?.(remainingIds) ?? remainingIds;
+    void reorderProviders(persistedIds);
   }
 
   function dragTargetFromClientY(clientY: number): DragOverTarget {
@@ -68,7 +88,9 @@ export function useProviderReorder({ providers, busy, reorderProviders }: UsePro
   }
 
   function cacheDragRowRects() {
-    dragRowRectsRef.current = Array.from(document.querySelectorAll<HTMLElement>("[data-provider-row-id]"))
+    dragRowRectsRef.current = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-provider-row-id]:not([data-provider-reorder-disabled='true'])")
+    )
       .map((row) => {
         const providerId = row.dataset.providerRowId;
         if (!providerId) return null;
@@ -105,6 +127,7 @@ export function useProviderReorder({ providers, busy, reorderProviders }: UsePro
 
   function handleProviderPointerDown(event: PointerEvent<HTMLElement>, providerId: string) {
     if (!canDragProviders || event.button !== 0) return;
+    if (isProviderDraggableRef.current && !isProviderDraggableRef.current(providerId)) return;
 
     const target = event.target;
     if (target instanceof HTMLElement && target.closest(".row-actions, .config-row-tools")) {

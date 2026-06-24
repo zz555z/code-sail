@@ -24,6 +24,7 @@ pub struct ProviderInput {
     pub wire_api: Option<String>,
     pub requires_openai_auth: Option<bool>,
     pub token: Option<String>,
+    pub token_action: Option<String>,
     pub update_config: bool,
     pub tool_type: Option<String>,
     pub claude_haiku_model: Option<String>,
@@ -74,6 +75,13 @@ pub struct SetCurrentModelRequest {
     pub model: String,
     pub token: Option<String>,
     pub update_config: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TokenAction {
+    Keep,
+    Replace,
+    Clear,
 }
 
 #[tauri::command]
@@ -168,22 +176,25 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
         .requires_openai_auth
         .or_else(|| existing_provider.as_ref().map(|provider| provider.requires_open_ai_auth))
         .unwrap_or(false);
-    let explicit_token = input
+    let token_action =
+        token_action_from_input(input.token_action.as_deref(), input.token.as_deref())?;
+    let provided_token = input
         .token
         .as_deref()
         .map(str::trim)
         .filter(|token| !token.is_empty())
         .map(ToString::to_string);
-    let existing_token = if explicit_token.is_none() {
-        if updates_existing_provider {
-            get_provider_token(&conn, &config_path, original_id)?
-        } else {
-            get_provider_token(&conn, &config_path, &provider_id)?
+    let token = match token_action {
+        TokenAction::Keep => {
+            if updates_existing_provider {
+                get_provider_token(&conn, &config_path, original_id)?
+            } else {
+                None
+            }
         }
-    } else {
-        None
+        TokenAction::Replace => Some(provided_token.context("Token 不能为空")?),
+        TokenAction::Clear => None,
     };
-    let token = explicit_token.or(existing_token);
     let stored_token = encrypt_optional_token(&config_path, token.as_deref())?;
     let normalized_base_url = match tool_type {
         ToolType::Claude => base_url.to_string(),
@@ -256,6 +267,26 @@ fn save_provider_inner(input: ProviderInput) -> Result<SaveProviderResponse> {
     Ok(SaveProviderResponse {
         provider_id,
     })
+}
+
+fn token_action_from_input(action: Option<&str>, token: Option<&str>) -> Result<TokenAction> {
+    if let Some(action) = action.map(str::trim).filter(|action| !action.is_empty()) {
+        return match action {
+            "keep" => Ok(TokenAction::Keep),
+            "replace" => Ok(TokenAction::Replace),
+            "clear" => Ok(TokenAction::Clear),
+            other => bail!("无效的 token action: {other}"),
+        };
+    }
+
+    if token
+        .map(str::trim)
+        .is_some_and(|token| !token.is_empty())
+    {
+        Ok(TokenAction::Replace)
+    } else {
+        Ok(TokenAction::Keep)
+    }
 }
 
 fn get_provider_detail_inner(provider_id: &str) -> Result<ProviderDetail> {
@@ -527,5 +558,40 @@ fn sync_tool_config(
     match tool_type {
         ToolType::Codex => sync_codex_files(conn, config_path),
         ToolType::Claude => sync_claude_settings(conn, config_path),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn derives_token_action_for_legacy_payloads() {
+        assert_eq!(
+            token_action_from_input(None, Some("sk-test")).unwrap(),
+            TokenAction::Replace
+        );
+        assert_eq!(
+            token_action_from_input(None, Some("   ")).unwrap(),
+            TokenAction::Keep
+        );
+        assert_eq!(token_action_from_input(None, None).unwrap(), TokenAction::Keep);
+    }
+
+    #[test]
+    fn parses_explicit_token_actions() {
+        assert_eq!(
+            token_action_from_input(Some("keep"), Some("sk-test")).unwrap(),
+            TokenAction::Keep
+        );
+        assert_eq!(
+            token_action_from_input(Some("replace"), Some("sk-test")).unwrap(),
+            TokenAction::Replace
+        );
+        assert_eq!(
+            token_action_from_input(Some("clear"), Some("sk-test")).unwrap(),
+            TokenAction::Clear
+        );
+        assert!(token_action_from_input(Some("delete"), None).is_err());
     }
 }

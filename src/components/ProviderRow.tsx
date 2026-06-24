@@ -11,6 +11,7 @@ type ProviderRowProps = {
   busy: boolean;
   dragging?: boolean;
   dragOverPlacement?: DragOverPlacement | null;
+  reorderDisabled?: boolean;
   healthStatus?: HealthStatus;
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
   onEdit: () => void;
@@ -28,6 +29,7 @@ export const ProviderRow = memo(function ProviderRow({
   busy,
   dragging = false,
   dragOverPlacement = null,
+  reorderDisabled = false,
   healthStatus,
   onPointerDown,
   onEdit,
@@ -49,6 +51,7 @@ export const ProviderRow = memo(function ProviderRow({
     <article
       className={rowClassName}
       data-provider-row-id={provider.id}
+      data-provider-reorder-disabled={reorderDisabled ? "true" : undefined}
       onPointerDown={onPointerDown}
       role="listitem"
     >
